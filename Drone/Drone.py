@@ -5,9 +5,8 @@
 # It includes methods for translational and rotational dynamics, state updates, and wind effects.
 
 import numpy as np
-from Controller import QuadCopterController
-from utils import wrap_angle
-import numpy as np
+from Drone.Controller import QuadCopterController
+from Utils.utils import wrap_angle
 from Rotor.TorchRotorModel import RotorModel
 
 

@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
 import pickle
-from World import World
+from Worlds.World import World
 
 class WorldEditor:
     def __init__(self, root, world):

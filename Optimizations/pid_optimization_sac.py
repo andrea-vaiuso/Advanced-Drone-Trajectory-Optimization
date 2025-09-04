@@ -18,14 +18,14 @@ import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3 import SAC
 
-from opt_func import (
+from Optimizations.opt_func import (
     log_step,
     plot_costs_trend,
     show_best_params,
     run_simulation,
 )
 
-from optimizer import Optimizer
+from Optimizations.optimizer import Optimizer
 
 
 class SACPIDOptimizer(Optimizer):
