@@ -1,0 +1,11 @@
+numpy
+matplotlib
+pandas
+pillow
+torch
+scipy
+scikit-learn
+bayesian-optimization
+pyyaml
+stable-baselines3
+gymnasium

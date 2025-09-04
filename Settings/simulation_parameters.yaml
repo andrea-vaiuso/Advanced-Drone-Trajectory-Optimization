@@ -1,0 +1,58 @@
+# Simulation parameters
+dt: 0.008 # Time sampling for dynamic simulation
+simulation_time: 70 # seconds
+frame_skip: 10 # Number of frames to skip for smoother animation
+threshold: 2.0  # Stop simulation threshold
+target_shift_threshold_distance: 2 # Shift to next segment threshold 
+noise_annoyance_radius: 14 # Radius for noise annoyance calculation in meters
+
+max_rpm: 3000 # Maximum RPM for the motors
+n_rotors: 4 # Number of rotors
+max_roll_angle: 30
+max_pitch_angle: 30
+max_yaw_angle: 30 # Maximum yaw angle in degrees
+
+max_h_speed_limit_kmh: 50.0
+max_v_speed_limit_kmh: 20.0
+max_angle_limit_deg: 30.0
+anti_windup_contrib: 0.4
+
+# Rotor model parameters
+norm_params_path: "Rotor/normalization_params.pth"
+rotor_model_path: "Rotor/rotor_model.pth"
+
+
+# # PID controller settings (yaw remain fixed) # Obtained with manual tuning
+# k_pid_yaw: [0.5, 1e-6, 0.1]
+# k_pid_pos: [0.7, 0.01, 0.09]
+# k_pid_alt: [0.7, 0, 0.1]
+# k_pid_att: [20, 1, 0.01]
+# k_pid_hsp: [1, 0.01, 0.01]
+# k_pid_vsp: [150, 10, 1]
+
+# # PID controller settings # Optimized
+k_pid_pos: [1.1240132388824793, 0.0, 0.13876467462646516]
+k_pid_alt: [1.1906124771490294, 0.0, 0.015940368883932323]
+k_pid_att: [15.308487751735063, 0.0001, 0.6367723627933443]
+k_pid_yaw: [0.5, 1e-06, 0.1]
+k_pid_hsp: [0.1277749417187626, 0.003285240848406342, 0.0]
+k_pid_vsp: [400.0, 43.914824636018764, 17.372206539015906]
+
+# Drone parameters
+m: 5.2
+I: [3.8e-3, 3.8e-3, 7.1e-3]
+d: 7.5e-7
+l: 0.32
+Cd: [0.1, 0.1, 0.15]
+Ca: [0.1, 0.1, 0.15]
+Jr: 6e-5
+
+# World settings
+world_data_path: "Worlds/world_winterthur.pkl"
+
+# Noise parameters
+dnn_model_filename: "Noise/lookup_noise_model.npy"
+empa_model_filename: "Noise/model_coefficients.npz"
+empa_model_scaling_filename: "Noise/scaler.joblib"
+rpm_reference: 2500
+

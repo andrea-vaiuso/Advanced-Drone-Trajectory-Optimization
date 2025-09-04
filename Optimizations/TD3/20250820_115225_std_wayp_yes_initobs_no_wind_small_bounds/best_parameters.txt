@@ -1,0 +1,51 @@
+Optimization Algorithm: RL - TD3
+Best parameters found:
+k_pid_pos: (0.7, 0.01, 0.09)
+k_pid_alt: (0.7, 0.0, 0.1)
+k_pid_att: (20.0, 1.0, 0.01)
+k_pid_yaw: (0.5, 1e-06, 0.1)
+k_pid_hsp: (1.0, 0.01, 0.01)
+k_pid_vsp: (150.0, 10.0, 1.0)
+Best cost value: 218.22991110338833
+Total optimization time: 18:48:12
+N iterations: 3000
+Max sim time: 150.00 seconds
+Avg step time: 22.56 seconds
+
+----------------
+Simulation parameters:
+dt: 0.008
+simulation_time: 100
+frame_skip: 30
+threshold: 2.0
+target_shift_threshold_distance: 2
+noise_annoyance_radius: 14
+max_rpm: 3000
+n_rotors: 4
+max_roll_angle: 30
+max_pitch_angle: 30
+max_yaw_angle: 30
+max_h_speed_limit_kmh: 50.0
+max_v_speed_limit_kmh: 20.0
+max_angle_limit_deg: 30.0
+anti_windup_contrib: 0.4
+norm_params_path: Rotor/normalization_params.pth
+rotor_model_path: Rotor/rotor_model.pth
+k_pid_yaw: [0.5, '1e-6', 0.1]
+k_pid_pos: [0.7, 0.01, 0.09]
+k_pid_alt: [0.7, 0, 0.1]
+k_pid_att: [20, 1, 0.01]
+k_pid_hsp: [1, 0.01, 0.01]
+k_pid_vsp: [150, 10, 1]
+m: 5.2
+I: [0.0038, 0.0038, 0.0071]
+d: 7.5e-07
+l: 0.32
+Cd: [0.1, 0.1, 0.15]
+Ca: [0.1, 0.1, 0.15]
+Jr: 6e-5
+world_data_path: Worlds/green_area.pkl
+dnn_model_filename: Noise/lookup_noise_model.npy
+empa_model_filename: Noise/model_coefficients.npz
+empa_model_scaling_filename: Noise/scaler.joblib
+rpm_reference: 2500

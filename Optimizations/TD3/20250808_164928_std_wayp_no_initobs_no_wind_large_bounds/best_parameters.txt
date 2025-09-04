@@ -1,0 +1,11 @@
+Best parameters found:
+k_pid_pos: (4547.407, 6365.8096, 7144.362)
+k_pid_alt: (5395.461, 4715.9175, 4818.698)
+k_pid_att: (8519.631, 4898.3843, 0.0)
+k_pid_yaw: (0.5, 1e-06, 0.1)
+k_pid_hsp: (7572.025, 3190.3572, 280.06613)
+k_pid_vsp: (7233.9155, 7844.962, 2613.56)
+Best cost value: 950.6819454873148
+Total optimization time: 51:07:54
+N iterations: 6000
+Max sim time: 150.00 seconds
