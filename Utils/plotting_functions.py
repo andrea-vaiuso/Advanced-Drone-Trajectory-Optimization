@@ -7,8 +7,8 @@
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
-from utils import euler_to_rot
-from Simulation import Simulation
+from Utils.utils import euler_to_rot
+from Drone.Simulation import Simulation
 from matplotlib.colors import LinearSegmentedColormap
 from datetime import datetime
 

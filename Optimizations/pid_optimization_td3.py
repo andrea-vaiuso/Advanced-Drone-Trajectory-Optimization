@@ -19,14 +19,14 @@ from gymnasium import spaces
 from stable_baselines3 import TD3
 from stable_baselines3.common.noise import NormalActionNoise
 
-from opt_func import (
+from Optimizations.opt_func import (
     log_step,
     plot_costs_trend,
     show_best_params,
     run_simulation,
 )
 
-from optimizer import Optimizer
+from Optimizations.optimizer import Optimizer
 
 
 class TD3PIDOptimizer(Optimizer):

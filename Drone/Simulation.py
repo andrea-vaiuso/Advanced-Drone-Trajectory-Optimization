@@ -6,9 +6,9 @@
 # and running the simulation with data collection.
 
 import numpy as np
-from Drone import QuadcopterModel
-from World import World
-from Wind import dryden_response
+from Drone.Drone import QuadcopterModel
+from Worlds.World import World
+from Drone.Wind import dryden_response
 from matplotlib import pyplot as plt
 from Noise.DNNModel import RotorSoundModel
 from Noise.Psychoacoustic import PsychoacousticBackendAdapter as PsLib

@@ -10,14 +10,14 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 
 import main as mainfunc
-from opt_func import (
+from Optimizations.opt_func import (
     log_step,
     plot_costs_trend,
     show_best_params,
     run_simulation,
 )
 
-from optimizer import Optimizer
+from Optimizations.optimizer import Optimizer
 
 
 class GAPIDOptimizer(Optimizer):
