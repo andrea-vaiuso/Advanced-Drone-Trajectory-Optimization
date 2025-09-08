@@ -20,7 +20,7 @@ from Optimizations.opt_func import (
 from Optimizations.optimizer import Optimizer
 
 
-class GAPIDOptimizer(Optimizer):
+class GAOptimizer(Optimizer):
     """Optimize PID gains using a Genetic Algorithm.
 
     Parameters
@@ -238,7 +238,7 @@ class GAPIDOptimizer(Optimizer):
 
 def main() -> None:
     """Run PID optimization using a Genetic Algorithm."""
-    optimizer = GAPIDOptimizer(
+    optimizer = GAOptimizer(
         config_file="Settings/ga_opt.yaml",
         parameters_file="Settings/simulation_parameters.yaml",
         verbose=True,

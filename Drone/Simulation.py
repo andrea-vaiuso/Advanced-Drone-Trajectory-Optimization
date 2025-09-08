@@ -88,6 +88,9 @@ class Simulation:
         self.distance_history = []
         self.seg_idx_history = []
 
+        self.noise_penalty_history = []
+        self.altitude_penalty_history = []
+
         # Simulation runtime
         self.simulation_time = 0.0
         self.current_seg_idx = 0
@@ -182,7 +185,19 @@ class Simulation:
 
                 if self.noise_model:
                     self._compute_noise_emissions()
-            
+
+                param = self.world.get_area_parameters(
+                    self.drone.state['pos'][0],
+                    self.drone.state['pos'][1],
+                    self.drone.state['pos'][2]
+                )
+                self.noise_penalty_history.append(param['noise_penalty'])
+                altitude_penalty = 0.0
+                if self.drone.state['pos'][2] < param['min_altitude']:
+                    altitude_penalty = abs(np.sqrt(param['min_altitude']**2 - self.drone.state['pos'][2]**2))
+                elif self.drone.state['pos'][2] > param['max_altitude']:
+                    altitude_penalty = abs(np.sqrt(self.drone.state['pos'][2]**2 - param['max_altitude']**2))
+                self.altitude_penalty_history.append(altitude_penalty)
 
             # Check for final target reached only if all the other waypoints have been reached
             if stop_at_target and self.current_seg_idx == len(self.waypoints):
@@ -452,8 +467,6 @@ class Simulation:
                 )
             spl = self._broadband_from_bands(spl_band)
             swl = self._broadband_from_bands(swl_band)
-
-            #Probabilmente sbagliato, da sommare i livelli in dB
             
             avg_spl += spl
             avg_swl += swl

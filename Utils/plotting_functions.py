@@ -11,6 +11,7 @@ from Utils.utils import euler_to_rot
 from Drone.Simulation import Simulation
 from matplotlib.colors import LinearSegmentedColormap
 from datetime import datetime
+from Worlds.World import World
 
 def plotLogData(log_dict, time, waypoints=None, ncols=2):
     """
@@ -400,3 +401,65 @@ def get_total_PA(sim: Simulation) -> float:
     for value in sim.noise_emission_map.values():
         total_PA += value.get('PA', 0.0) / sim.simulation_time
     return total_PA
+
+def show2DWorld(world: World, trajectories=None, A_list=None, B_list=None, all_targets=None, image_alpha=0.7, save=False, save_folder="OptimizedTrajectory"):
+    """
+    Visualize a 2D representation of the world with the drone's trajectory, start and end points, and waypoints.
+    Parameters:
+        world (World): The World object containing the grid and area parameters.
+        trajectories (list of list of tuples): For each drone, a list of (x, y) positions representing its trajectory.
+        A_list (list of dict): List of starting points for each drone, each as a dict with 'x' and 'y' keys.
+        B_list (list of dict): List of destination points for each drone, each as a dict with 'x' and 'y' keys.
+        all_targets (list of list of tuples): For each drone, a list of intermediate targets as (x, y) tuples.
+        image_alpha (float): Alpha transparency for the background image (0.0 to 1.0).
+        save (bool): Whether to save the plot as a PNG file.
+        save_folder (str): Folder to save the plot if save is True.
+    """
+    fig, ax = plt.subplots(figsize=(8, 6))
+    grid_size = world.grid_size
+    # Background image.
+    if world.background_image is not None:
+        bg_img = np.array(world.background_image)
+        ax.imshow(bg_img, extent=[0, world.max_world_size, 0, world.max_world_size],
+                  origin='lower', alpha=image_alpha, zorder=-1)
+
+    # Draw grid.
+    for (x, y, z), params in world.grid.items():
+        if z == 0:
+            rect = plt.Rectangle((x * grid_size, y * grid_size), grid_size, grid_size, 
+                                 color=world.AREA_PARAMS[params]["color"], 
+                                 alpha=world.AREA_PARAMS[params]["alpha"])
+            ax.add_patch(rect)
+
+    # Define colors for drones.
+    colors = ['green', 'blue', 'magenta', 'orange', 'cyan']
+    n = len(A_list) if A_list is not None else 0
+
+    if trajectories is not None and A_list is not None and B_list is not None:
+        for i in range(n):
+            # Plot starting point (A) as a circle.
+            ax.scatter(A_list[i]["x"], A_list[i]["y"], color=colors[i % len(colors)], s=50, marker='o', label=f"Drone {i+1} A")
+            # Plot destination (B) as a circle.
+            ax.scatter(B_list[i]["x"], B_list[i]["y"], color=colors[(i+1) % len(colors)], s=50, marker='o', label=f"Drone {i+1} B")
+            # Plot intermediate targets with the same color as the drone.
+            if all_targets is not None and len(all_targets) > i and all_targets[i]:
+                # Convert each target (assumed to be a list: [x, y]) to a numpy array.
+                pts = np.array([[pt[0], pt[1]] for pt in all_targets[i]])
+                if pts.size > 0:
+                    ax.scatter(pts[:, 0], pts[:, 1], color=colors[i % len(colors)], s=30)
+                    for j, pt in enumerate(pts, 1):
+                        ax.text(pt[0] + 5, pt[1] + 5, f"{j}", color=colors[i % len(colors)], fontsize=8)
+            # Plot trajectory.
+            traj_arr = np.array(trajectories[i])
+            ax.plot(traj_arr[:, 0], traj_arr[:, 1], linestyle='--', lw=1.5, color=colors[i % len(colors)])
+    
+    ax.set_xlabel("X (m)")
+    ax.set_ylabel("Y (m)")
+    ax.set_title(f"2D World '{world.world_name}' XY")
+    ax.set_xlim(0, world.max_world_size)
+    ax.set_ylim(0, world.max_world_size)
+    ax.legend(loc='upper left')
+    ax.grid(True)
+    if save:
+        plt.savefig(f"{save_folder}/trajectory_{world.world_name}.png", dpi=300)
+    plt.show()

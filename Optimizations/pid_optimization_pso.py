@@ -21,7 +21,7 @@ from Optimizations.opt_func import (
 from Optimizations.optimizer import Optimizer
 
 
-class PSOPIDOptimizer(Optimizer):
+class PSOOptimizer(Optimizer):
     """Optimize PID gains using Particle Swarm Optimization.
 
     Parameters
@@ -215,7 +215,7 @@ class PSOPIDOptimizer(Optimizer):
 
 def main() -> None:
     """Run PID optimization using Particle Swarm Optimization."""
-    optimizer = PSOPIDOptimizer(
+    optimizer = PSOOptimizer(
         config_file="Settings/pso_opt.yaml",
         parameters_file="Settings/simulation_parameters.yaml",
         verbose=True,

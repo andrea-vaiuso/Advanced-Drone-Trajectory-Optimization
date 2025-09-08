@@ -21,7 +21,7 @@ from Optimizations.opt_func import (
 from Optimizations.optimizer import Optimizer
 
 
-class BayesianPIDOptimizer(Optimizer):
+class BayesianOptimizer(Optimizer):
     """Optimize PID gains using Bayesian Optimization.
 
     Parameters
@@ -201,7 +201,7 @@ class BayesianPIDOptimizer(Optimizer):
 
 def main() -> None:
     """Run PID optimization using Bayesian Optimization."""
-    optimizer = BayesianPIDOptimizer(
+    optimizer = BayesianOptimizer(
         config_file="Settings/bay_opt.yaml",
         parameters_file="Settings/simulation_parameters.yaml",
         verbose=True,

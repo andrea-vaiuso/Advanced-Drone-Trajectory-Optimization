@@ -21,7 +21,7 @@ from Optimizations.opt_func import (
 from Optimizations.optimizer import Optimizer
 
 
-class GWOPIDOptimizer(Optimizer):
+class GWOOptimizer(Optimizer):
     """Optimize PID gains using the Grey Wolf Optimizer.
 
     Parameters
@@ -237,7 +237,7 @@ class GWOPIDOptimizer(Optimizer):
 
 def main() -> None:
     """Run PID optimization using the Grey Wolf Optimizer."""
-    optimizer = GWOPIDOptimizer(
+    optimizer = GWOOptimizer(
         config_file="Settings/gwo_opt.yaml",
         parameters_file="Settings/simulation_parameters.yaml",
         verbose=True,
