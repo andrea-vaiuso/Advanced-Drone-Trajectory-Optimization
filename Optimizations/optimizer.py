@@ -6,7 +6,7 @@ extend the initializer to parse configuration files or set up logging.
 """
 
 from __future__ import annotations
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 
 class Optimizer:
@@ -22,7 +22,7 @@ class Optimizer:
         set_initial_obs: bool = True,
         simulate_wind_flag: bool = False,
         study_name: str = "",
-        waypoints: Optional[list] = None,
+        waypoints: Optional[List[dict]] = None,
         simulation_time: int = 150,
     ) -> None:
         self.name = name
@@ -44,8 +44,8 @@ class Optimizer:
         self.opt_output_path: str = ""
         self.iteration: int = 0
         self.best_cost: float = float("inf")
-        self.best_costs: list[float] = []
-        self.costs: list[float] = []
+        self.best_costs: List[float] = []
+        self.costs: List[float] = []
         self.noise_model: Any = None
 
     # ------------------------------------------------------------------

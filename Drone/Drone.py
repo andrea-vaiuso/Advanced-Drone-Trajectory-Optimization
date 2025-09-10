@@ -5,6 +5,7 @@
 # It includes methods for translational and rotational dynamics, state updates, and wind effects.
 
 import numpy as np
+from typing import List
 from Drone.Controller import QuadCopterController
 from Utils.utils import wrap_angle
 from Rotor.TorchRotorModel import RotorModel
@@ -60,7 +61,7 @@ class QuadcopterModel:
                     self.R_root = float(radius_sections.split(" ")[-1].strip())
                     self.R_tip = float(radius_sections.split(" ")[0].strip())
         
-        self.rotors: list[RotorModel] = []
+        self.rotors: List[RotorModel] = []
         for _ in range(n_rotors):
             rotor_model = RotorModel(1,6, norm_params_path="Rotor/normalization_params.pth")
             rotor_model.load_model(rotor_model_path)

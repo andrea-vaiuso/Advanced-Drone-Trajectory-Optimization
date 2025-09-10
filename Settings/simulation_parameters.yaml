@@ -17,6 +17,12 @@ max_v_speed_limit_kmh: 20.0
 max_angle_limit_deg: 30.0
 anti_windup_contrib: 0.4
 
+# Trajectory parameters
+start_point: [0.0, 0.0, 0.0]
+end_point: [100.0, 100.0, 0.0]
+n_intermediate_waypoints: 5
+waypoint_perturbation_range: 300.0
+
 # Rotor model parameters
 norm_params_path: "Rotor/normalization_params.pth"
 rotor_model_path: "Rotor/rotor_model.pth"

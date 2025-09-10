@@ -5,7 +5,7 @@
 """Particle Swarm Optimization for PID tuning packaged into a class."""
 
 from time import time
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 import numpy as np
 
@@ -50,7 +50,7 @@ class PSOOptimizer(Optimizer):
         set_initial_obs: bool = True,
         simulate_wind_flag: bool = False,
         study_name: str = "",
-        waypoints: Optional[list] = None,
+        waypoints: Optional[List[dict]] = None,
         simulation_time: int = 150,
     ) -> None:
         super().__init__(
@@ -75,10 +75,11 @@ class PSOOptimizer(Optimizer):
 
         # Base trajectory and PID
         self.base_pid = mainfunc.load_pid_gains(self.parameters)
+        params = self.parameters
         if waypoints is None:
-            n_points = int(pso_cfg.get("n_points", 5))
-            A = np.array(pso_cfg.get("A", [0.0, 0.0, 0.0]), dtype=float)
-            B = np.array(pso_cfg.get("B", [100.0, 100.0, 0.0]), dtype=float)
+            n_points = int(params.get("n_intermediate_waypoints", pso_cfg.get("n_points", 5)))
+            A = np.array(params.get("start_point", pso_cfg.get("A", [0.0, 0.0, 0.0])), dtype=float)
+            B = np.array(params.get("end_point", pso_cfg.get("B", [100.0, 100.0, 0.0])), dtype=float)
             line = np.linspace(A, B, n_points + 2)
             self.base_waypoints = [
                 {"x": float(p[0]), "y": float(p[1]), "z": float(p[2]), "v": 5}
@@ -93,6 +94,7 @@ class PSOOptimizer(Optimizer):
         )
 
         pbounds_cfg = pso_cfg.get("pbounds", {})
+        perturb = float(params.get("waypoint_perturbation_range", pso_cfg.get("perturbation_range", 300.0)))
         if pbounds_cfg:
             self.pbounds = {k: tuple(v) for k, v in pbounds_cfg.items()}
             self.lower_bounds = np.array(
@@ -102,7 +104,6 @@ class PSOOptimizer(Optimizer):
                 [v[1] for v in self.pbounds.values()], dtype=float
             )
         else:
-            perturb = float(pso_cfg.get("perturbation_range", 10.0))
             self.lower_bounds = -perturb * np.ones(self.n_points * 3)
             self.upper_bounds = perturb * np.ones(self.n_points * 3)
             self.pbounds = {
@@ -112,15 +113,15 @@ class PSOOptimizer(Optimizer):
             }
         self.dim = self.lower_bounds.size
 
-        self.costs: list[float] = []
-        self.best_costs: list[float] = []
+        self.costs: List[float] = []
+        self.best_costs: List[float] = []
         self.global_best_pos: Optional[np.ndarray] = None
         self.global_best_cost = np.inf
 
     # ------------------------------------------------------------------
     # Utility methods
     # ------------------------------------------------------------------
-    def decode_particle(self, vec: np.ndarray) -> list[dict]:
+    def decode_particle(self, vec: np.ndarray) -> List[dict]:
         """Convert a particle vector into a list of waypoints."""
         pts = self.base_traj.copy()
         vec = vec.reshape(self.n_points, 3)
@@ -130,7 +131,7 @@ class PSOOptimizer(Optimizer):
             for p in pts
         ]
 
-    def simulate_trajectory(self, waypoints: list) -> Dict[str, float]:
+    def simulate_trajectory(self, waypoints: List[dict]) -> Dict[str, float]:
         """Run a simulation with the given trajectory and return the cost metrics."""
         return run_simulation(
             self.base_pid,
