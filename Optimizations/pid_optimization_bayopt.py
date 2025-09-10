@@ -70,43 +70,64 @@ class BayesianOptimizer(Optimizer):
         self.n_iter = int(bayopt_cfg.get("n_iter", 1500))
         self.init_points = int(bayopt_cfg.get("init_points", 20))
 
-        pbounds_cfg = bayopt_cfg.get("pbounds", {})
-        self.pbounds = {k: tuple(v) for k, v in pbounds_cfg.items()}
+        # Base trajectory and PID
+        self.base_pid = mainfunc.load_pid_gains(self.parameters)
+        if waypoints is None:
+            n_points = int(bayopt_cfg.get("n_points", 5))
+            A = np.array(bayopt_cfg.get("A", [0.0, 0.0, 0.0]), dtype=float)
+            B = np.array(bayopt_cfg.get("B", [100.0, 100.0, 0.0]), dtype=float)
+            line = np.linspace(A, B, n_points + 2)
+            self.base_waypoints = [
+                {"x": float(p[0]), "y": float(p[1]), "z": float(p[2]), "v": 5}
+                for p in line
+            ]
+        else:
+            self.base_waypoints = waypoints
+            n_points = len(self.base_waypoints) - 2
+        self.n_points = n_points
+        self.base_traj = np.array(
+            [[wp["x"], wp["y"], wp["z"]] for wp in self.base_waypoints], dtype=float
+        )
 
-        current_best = mainfunc.load_pid_gains(self.parameters)
-        self.init_guess = {
-            "kp_pos": current_best["k_pid_pos"][0],
-            "ki_pos": current_best["k_pid_pos"][1],
-            "kd_pos": current_best["k_pid_pos"][2],
-            "kp_alt": current_best["k_pid_alt"][0],
-            "ki_alt": current_best["k_pid_alt"][1],
-            "kd_alt": current_best["k_pid_alt"][2],
-            "kp_att": current_best["k_pid_att"][0],
-            "ki_att": current_best["k_pid_att"][1],
-            "kd_att": current_best["k_pid_att"][2],
-            "kp_hsp": current_best["k_pid_hsp"][0],
-            "ki_hsp": current_best["k_pid_hsp"][1],
-            "kd_hsp": current_best["k_pid_hsp"][2],
-            "kp_vsp": current_best["k_pid_vsp"][0],
-            "ki_vsp": current_best["k_pid_vsp"][1],
-            "kd_vsp": current_best["k_pid_vsp"][2],
-        }
+        pbounds_cfg = bayopt_cfg.get("pbounds", {})
+        if pbounds_cfg:
+            self.pbounds = {k: tuple(v) for k, v in pbounds_cfg.items()}
+        else:
+            perturb = float(bayopt_cfg.get("perturbation_range", 10.0))
+            self.pbounds = {
+                f"p{i}_{ax}": (-perturb, perturb)
+                for i in range(self.n_points)
+                for ax in "xyz"
+            }
+        self.param_names = list(self.pbounds.keys())
+
+        self.init_guess = {name: 0.0 for name in self.param_names}
 
         self.iteration = 0
         self.best_target = -np.inf
-        self.best_params: Optional[Dict[str, tuple]] = None
+        self.best_params: Optional[list] = None
         self.costs: list[float] = []
         self.best_costs: list[float] = []
 
     # ------------------------------------------------------------------
     # Utility methods
     # ------------------------------------------------------------------
-    def simulate_pid(self, pid_gains: Dict[str, tuple]) -> Dict[str, float]:
-        """Run a simulation with the given PID gains and return the cost metrics."""
+    def decode_vector(self, vec: np.ndarray) -> list[dict]:
+        """Convert a flat vector into a list of waypoints."""
+        pts = self.base_traj.copy()
+        vec = vec.reshape(self.n_points, 3)
+        pts[1:-1] += vec
+        return [
+            {"x": float(p[0]), "y": float(p[1]), "z": float(p[2]), "v": 5}
+            for p in pts
+        ]
+
+    def simulate_trajectory(self, waypoints: list) -> Dict[str, float]:
+        """Run a simulation with the given trajectory and return the cost metrics."""
         return run_simulation(
-            pid_gains,
+            self.base_pid,
             self.parameters,
-            self.waypoints,
+            waypoints,
             self.world,
             self.thrust_max,
             self.simulation_time,
@@ -117,22 +138,21 @@ class BayesianOptimizer(Optimizer):
     def _objective(self, **kwargs) -> float:
         """Objective function maximized by the Bayesian optimizer."""
         self.iteration += 1
-        params = {
-            "k_pid_pos": (kwargs["kp_pos"], kwargs["ki_pos"], kwargs["kd_pos"]),
-            "k_pid_alt": (kwargs["kp_alt"], kwargs["ki_alt"], kwargs["kd_alt"]),
-            "k_pid_att": (kwargs["kp_att"], kwargs["ki_att"], kwargs["kd_att"]),
-            "k_pid_yaw": (0.5, 1e-6, 0.1),
-            "k_pid_hsp": (kwargs["kp_hsp"], kwargs["ki_hsp"], kwargs["kd_hsp"]),
-            "k_pid_vsp": (kwargs["kp_vsp"], kwargs["ki_vsp"], kwargs["kd_vsp"]),
-        }
-        sim_costs = self.simulate_pid(params)
+        vec = np.array([kwargs[name] for name in self.param_names])
+        waypoints = self.decode_vector(vec)
+        sim_costs = self.simulate_trajectory(waypoints)
         total_cost = sim_costs["total_cost"]
         target = -total_cost
 
-        log_step(params, total_cost, self.log_path, sim_costs)
+        log_step(
+            {"waypoints": [(wp["x"], wp["y"], wp["z"]) for wp in waypoints]},
+            total_cost,
+            self.log_path,
+            sim_costs,
+        )
         if target > self.best_target:
             self.best_target = target
-            self.best_params = params
+            self.best_params = waypoints
         self.costs.append(total_cost)
         self.best_costs.append(-self.best_target)
 
@@ -168,19 +188,13 @@ class BayesianOptimizer(Optimizer):
                 print("No evaluations were performed.")
                 return
             best = optimizer.max["params"]
-            best_formatted = {
-                "k_pid_pos": (best["kp_pos"], best["ki_pos"], best["kd_pos"]),
-                "k_pid_alt": (best["kp_alt"], best["ki_alt"], best["kd_alt"]),
-                "k_pid_att": (best["kp_att"], best["ki_att"], best["kd_att"]),
-                "k_pid_yaw": (0.5, 1e-6, 0.1),
-                "k_pid_hsp": (best["kp_hsp"], best["ki_hsp"], best["kd_hsp"]),
-                "k_pid_vsp": (best["kp_vsp"], best["ki_vsp"], best["kd_vsp"]),
-            }
+            vec = np.array([best[name] for name in self.param_names])
+            best_waypoints = self.decode_vector(vec)
             global_best_cost = -optimizer.max["target"]
             show_best_params(
                 "Bayesian",
                 self.parameters,
-                best_formatted,
+                best_waypoints,
                 self.opt_output_path,
                 global_best_cost,
                 self.iteration,

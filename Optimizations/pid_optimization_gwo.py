@@ -70,11 +70,44 @@ class GWOOptimizer(Optimizer):
         self.n_iter = int(gwo_cfg.get("n_iter", 100))
         self.pack_size = int(gwo_cfg.get("pack_size", 30))
 
+        # Base trajectory and PID
+        self.base_pid = mainfunc.load_pid_gains(self.parameters)
+        if waypoints is None:
+            n_points = int(gwo_cfg.get("n_points", 5))
+            A = np.array(gwo_cfg.get("A", [0.0, 0.0, 0.0]), dtype=float)
+            B = np.array(gwo_cfg.get("B", [100.0, 100.0, 0.0]), dtype=float)
+            line = np.linspace(A, B, n_points + 2)
+            self.base_waypoints = [
+                {"x": float(p[0]), "y": float(p[1]), "z": float(p[2]), "v": 5}
+                for p in line
+            ]
+        else:
+            self.base_waypoints = waypoints
+            n_points = len(self.base_waypoints) - 2
+        self.n_points = n_points
+        self.base_traj = np.array(
+            [[wp["x"], wp["y"], wp["z"]] for wp in self.base_waypoints], dtype=float
+        )
+
         pbounds_cfg = gwo_cfg.get("pbounds", {})
-        self.pbounds = {k: tuple(v) for k, v in pbounds_cfg.items()}
-        self.lower_bounds = np.array([v[0] for v in self.pbounds.values()], dtype=float)
-        self.upper_bounds = np.array([v[1] for v in self.pbounds.values()], dtype=float)
-        self.dim = len(self.lower_bounds)
+        if pbounds_cfg:
+            self.pbounds = {k: tuple(v) for k, v in pbounds_cfg.items()}
+            self.lower_bounds = np.array(
+                [v[0] for v in self.pbounds.values()], dtype=float
+            )
+            self.upper_bounds = np.array(
+                [v[1] for v in self.pbounds.values()], dtype=float
+            )
+        else:
+            perturb = float(gwo_cfg.get("perturbation_range", 10.0))
+            self.lower_bounds = -perturb * np.ones(self.n_points * 3)
+            self.upper_bounds = perturb * np.ones(self.n_points * 3)
+            self.pbounds = {
+                f"p{i}_{ax}": (self.lower_bounds[3 * i + j], self.upper_bounds[3 * i + j])
+                for i in range(self.n_points)
+                for j, ax in enumerate("xyz")
+            }
+        self.dim = self.lower_bounds.size
 
         self.costs: list[float] = []
         self.best_costs: list[float] = []
@@ -82,23 +115,22 @@ class GWOOptimizer(Optimizer):
     # ------------------------------------------------------------------
     # Utility methods
     # ------------------------------------------------------------------
-    def decode_wolf(self, vec: np.ndarray) -> Dict[str, tuple]:
-        """Convert a wolf vector into a PID gain dictionary."""
-        return {
-            "k_pid_pos": (vec[0], vec[1], vec[2]),
-            "k_pid_alt": (vec[3], vec[4], vec[5]),
-            "k_pid_att": (vec[6], vec[7], vec[8]),
-            "k_pid_yaw": (0.5, 1e-6, 0.1),
-            "k_pid_hsp": (vec[9], vec[10], vec[11]),
-            "k_pid_vsp": (vec[12], vec[13], vec[14]),
-        }
+    def decode_wolf(self, vec: np.ndarray) -> list[dict]:
+        """Convert a wolf vector into a list of waypoints."""
+        pts = self.base_traj.copy()
+        vec = vec.reshape(self.n_points, 3)
+        pts[1:-1] += vec
+        return [
+            {"x": float(p[0]), "y": float(p[1]), "z": float(p[2]), "v": 5}
+            for p in pts
+        ]
 
-    def simulate_pid(self, pid_gains: Dict[str, tuple]) -> Dict[str, float]:
-        """Run a simulation with the given PID gains and return the cost metrics."""
+    def simulate_trajectory(self, waypoints: list) -> Dict[str, float]:
+        """Run a simulation with the given trajectory and return the cost metrics."""
         return run_simulation(
-            pid_gains,
+            self.base_pid,
             self.parameters,
-            self.waypoints,
+            waypoints,
             self.world,
             self.thrust_max,
             self.simulation_time,
@@ -117,27 +149,7 @@ class GWOOptimizer(Optimizer):
         )
 
         if self.set_initial_obs:
-            current_best = mainfunc.load_pid_gains(self.parameters)
-            init_wolf = np.array(
-                [
-                    current_best["k_pid_pos"][0],
-                    current_best["k_pid_pos"][1],
-                    current_best["k_pid_pos"][2],
-                    current_best["k_pid_alt"][0],
-                    current_best["k_pid_alt"][1],
-                    current_best["k_pid_alt"][2],
-                    current_best["k_pid_att"][0],
-                    current_best["k_pid_att"][1],
-                    current_best["k_pid_att"][2],
-                    current_best["k_pid_hsp"][0],
-                    current_best["k_pid_hsp"][1],
-                    current_best["k_pid_hsp"][2],
-                    current_best["k_pid_vsp"][0],
-                    current_best["k_pid_vsp"][1],
-                    current_best["k_pid_vsp"][2],
-                ]
-            )
-            pack[0] = np.clip(init_wolf, self.lower_bounds, self.upper_bounds)
+            pack[0] = np.zeros(self.dim)
 
         alpha_pos = np.zeros(self.dim)
         beta_pos = np.zeros(self.dim)
@@ -152,11 +164,16 @@ class GWOOptimizer(Optimizer):
             for it in range(self.n_iter):
                 for i in range(self.pack_size):
                     self.iteration = (i + 1) * (it + 1)
-                    gains = self.decode_wolf(pack[i])
-                    costs_sim = self.simulate_pid(gains)
+                    waypoints = self.decode_wolf(pack[i])
+                    costs_sim = self.simulate_trajectory(waypoints)
                     total_cost = costs_sim["total_cost"]
                     self.costs.append(total_cost)
-                    log_step(gains, total_cost, self.log_path, costs_sim)
+                    log_step(
+                        {"waypoints": [(wp["x"], wp["y"], wp["z"]) for wp in waypoints]},
+                        total_cost,
+                        self.log_path,
+                        costs_sim,
+                    )
                     if self.verbose:
                         print(
                             f"[ GWO ] Iteration {self.iteration}/{self.n_iter*self.pack_size} | "

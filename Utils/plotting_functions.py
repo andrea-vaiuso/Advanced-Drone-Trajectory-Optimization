@@ -443,8 +443,11 @@ def show2DWorld(world: World, trajectories=None, A_list=None, B_list=None, all_t
             ax.scatter(B_list[i]["x"], B_list[i]["y"], color=colors[(i+1) % len(colors)], s=50, marker='o', label=f"Drone {i+1} B")
             # Plot intermediate targets with the same color as the drone.
             if all_targets is not None and len(all_targets) > i and all_targets[i]:
-                # Convert each target (assumed to be a list: [x, y]) to a numpy array.
-                pts = np.array([[pt[0], pt[1]] for pt in all_targets[i]])
+                # Convert each target to numpy array, supporting both dicts and (x, y) tuples.
+                pts = np.array([
+                    [pt["x"], pt["y"]] if isinstance(pt, dict) else [pt[0], pt[1]]
+                    for pt in all_targets[i]
+                ])
                 if pts.size > 0:
                     ax.scatter(pts[:, 0], pts[:, 1], color=colors[i % len(colors)], s=30)
                     for j, pt in enumerate(pts, 1):
