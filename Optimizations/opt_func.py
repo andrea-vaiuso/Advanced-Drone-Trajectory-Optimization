@@ -63,13 +63,13 @@ def log_step(params: Dict[str, Any], cost: float, log_path: str, costs: dict = N
 
 
 def calculate_costs(sim: Simulation, simulation_time: float,
-                    pitch_roll_oscillation_weight: float = 1.0,
-                    thrust_oscillation_weight: float = 1e-5,
                     altitude_weight: float = 1.0,
                     power_weight: float = 1e-4,
                     noise_weight: float = 2e-25,
-                    print_costs: bool = False) -> tuple:
-
+                    print_costs: bool = False,
+                    weight_penalties: bool = True
+                    ) -> tuple:
+    noise_penalty_history = np.array(sim.noise_penalty_history)
     """Compute the cost metrics used for PID gain optimization."""
     angles = np.array(sim.angles_history)
     final_time = sim.navigation_time if sim.navigation_time is not None else simulation_time
@@ -85,14 +85,21 @@ def calculate_costs(sim: Simulation, simulation_time: float,
 
     power_cost = np.sum(np.array(sim.power_history)) * power_weight
 
-    altitude_rule_cost = np.sum(np.array(sim.altitude_penalty_history)) * altitude_weight
+    if weight_penalties:
+        altitude_rule_cost = np.sum(np.array(sim.altitude_penalty_history)) * altitude_weight
+    else:
+        altitude_rule_cost = 0
 
     time_cost = final_time
 
     p = 12  # norm order for noise cost
     if len(sim.swl_history) > 0:
         swl = np.array(sim.swl_history, dtype=float)
-        swl_weighted = swl * np.array(sim.noise_penalty_history)
+        if weight_penalties:
+            # Elementwise multiply the sound power levels by the noise penalties
+            swl_weighted = swl * noise_penalty_history
+        else:
+            swl_weighted = swl
         noise_cost = noise_weight * (np.linalg.norm(swl_weighted, ord=p)**p + np.max(swl))
     else:
         noise_cost = 0.0

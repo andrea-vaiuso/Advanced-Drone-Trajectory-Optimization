@@ -19,7 +19,7 @@ anti_windup_contrib: 0.4
 
 # Trajectory parameters
 start_point: [0.0, 0.0, 0.0]
-end_point: [100.0, 100.0, 0.0]
+end_point: [1000.0, 1000.0, 10.0]
 n_intermediate_waypoints: 5
 waypoint_perturbation_range: 300.0
 

@@ -17,7 +17,7 @@ class World:
             "name": "Housing Estate",
             "min_altitude": 150, 
             "max_altitude": 1000, 
-            "noise_penalty": 3,
+            "noise_penalty": 1.2,
             "color": "blue",
             "alpha": 0.2
         },
@@ -44,7 +44,7 @@ class World:
             "name": "Forbidden Area",
             "min_altitude": 0, 
             "max_altitude": 0, 
-            "noise_penalty": 10,
+            "noise_penalty": 5,
             "color": "red",
             "alpha": 0.2
         }

@@ -9,7 +9,6 @@ from Noise.EmpaModel import NoiseModel as EmpaModel
 from Rotor.TorchRotorModel import RotorModel
 import yaml
 from Noise.Psychoacoustic import PsychoacousticBackendAdapter as PsLib
-from Utils.opt_func import calculate_costs
 
 def load_parameters(parameters_file) -> dict:
     """
