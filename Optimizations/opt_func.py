@@ -212,27 +212,32 @@ def seconds_to_hhmmss(seconds: float) -> str:
     secs = int(seconds % 60)
     return f"{hours:02}:{minutes:02}:{secs:02}"
 
-def show_best_params(alg_name, sim_parameters, best_params, opt_output_path, global_best_cost, n_iter, simulation_time, tot_time):
-    print("Best parameters found:")
-    print("k_pid_yaw: (0.5, 1e-6, 0.1)")
-    print("k_pid_pos: [{:.5g}, {:.5g}, {:.5g}]".format(*best_params['k_pid_pos']))
-    print("k_pid_alt: [{:.5g}, {:.5g}, {:.5g}]".format(*best_params['k_pid_alt']))
-    print("k_pid_att: [{:.5g}, {:.5g}, {:.5g}]".format(*best_params['k_pid_att']))
-    print("k_pid_hsp: [{:.5g}, {:.5g}, {:.5g}]".format(*best_params['k_pid_hsp']))
-    print("k_pid_vsp: [{:.5g}, {:.5g}, {:.5g}]".format(*best_params['k_pid_vsp']))
+def show_best_params(
+    alg_name,
+    sim_parameters,
+    best_params,
+    opt_output_path,
+    global_best_cost,
+    n_iter,
+    simulation_time,
+    tot_time,
+):
+    print("Best trajectory found:")
+    for i, wp in enumerate(best_params):
+        print("WP{}: [{:.5g}, {:.5g}, {:.5g}]".format(i, wp["x"], wp["y"], wp["z"]))
     print("Best cost value: {:.4f}".format(global_best_cost))
 
-    with open(opt_output_path, 'w') as f:
+    with open(opt_output_path, "w") as f:
         f.write(f"Optimization Algorithm: {alg_name}\n")
-        f.write("Best parameters found:\n")
-        for k, v in best_params.items():
-            f.write(f"{k}: {v}\n")
+        f.write("Best trajectory found:\n")
+        for i, wp in enumerate(best_params):
+            f.write(f"WP{i}: ({wp['x']}, {wp['y']}, {wp['z']})\n")
         f.write(f"Best cost value: {global_best_cost}\n")
         f.write(f"Total optimization time: {seconds_to_hhmmss(tot_time)}\n")
         f.write(f"N iterations: {n_iter}\n")
         f.write(f"Max sim time: {simulation_time:.2f} seconds\n")
         f.write(f"Avg step time: {tot_time / n_iter:.2f} seconds\n")
-        f.write(f"\n----------------\nSimulation parameters:\n")
+        f.write("\n----------------\nSimulation parameters:\n")
         for k, v in sim_parameters.items():
             f.write(f"{k}: {v}\n")
 
