@@ -238,7 +238,6 @@ def main() -> None:
         verbose=True,
         set_initial_obs=True,
         simulate_wind_flag=False,
-        waypoints=mainfunc.create_training_waypoints(),
     )
     optimizer.optimize()
 

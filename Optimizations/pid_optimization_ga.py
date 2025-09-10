@@ -260,8 +260,7 @@ def main() -> None:
         parameters_file="Settings/simulation_parameters.yaml",
         verbose=True,
         set_initial_obs=True,
-        simulate_wind_flag=False,
-        waypoints=mainfunc.create_training_waypoints(),
+        simulate_wind_flag=False
     )
     optimizer.optimize()
 

@@ -402,67 +402,91 @@ def get_total_PA(sim: Simulation) -> float:
         total_PA += value.get('PA', 0.0) / sim.simulation_time
     return total_PA
 
-def show2DWorld(world: World, trajectories=None, A_list=None, B_list=None, all_targets=None, image_alpha=0.7, save=False, save_folder="OptimizedTrajectory"):
+
+def show2DWorld(world: World, trajectory=None, A=None, B=None, targets=None,
+                image_alpha=0.7, save=False, save_folder="OptimizedTrajectory"):
     """
-    Visualize a 2D representation of the world with the drone's trajectory, start and end points, and waypoints.
-    Parameters:
-        world (World): The World object containing the grid and area parameters.
-        trajectories (list of list of tuples): For each drone, a list of (x, y) positions representing its trajectory.
-        A_list (list of dict): List of starting points for each drone, each as a dict with 'x' and 'y' keys.
-        B_list (list of dict): List of destination points for each drone, each as a dict with 'x' and 'y' keys.
-        all_targets (list of list of tuples): For each drone, a list of intermediate targets as (x, y) tuples.
-        image_alpha (float): Alpha transparency for the background image (0.0 to 1.0).
-        save (bool): Whether to save the plot as a PNG file.
-        save_folder (str): Folder to save the plot if save is True.
+    Visualize a 2D representation of the world with one drone:
+    - trajectory: list of (x, y) or array of shape [N, 2]
+    - A: dict {'x': ..., 'y': ...} or tuple (x, y)
+    - B: dict {'x': ..., 'y': ...} or tuple (x, y)
+    - targets: list of dicts or tuples, each as (x, y) or {'x': ..., 'y': ...}
     """
     fig, ax = plt.subplots(figsize=(8, 6))
     grid_size = world.grid_size
-    # Background image.
-    if world.background_image is not None:
-        bg_img = np.array(world.background_image)
-        ax.imshow(bg_img, extent=[0, world.max_world_size, 0, world.max_world_size],
-                  origin='lower', alpha=image_alpha, zorder=-1)
 
-    # Draw grid.
+    # Background image
+    if getattr(world, "background_image", None) is not None:
+        bg_img = np.array(world.background_image)
+        ax.imshow(
+            bg_img,
+            extent=[0, world.max_world_size, 0, world.max_world_size],
+            origin="lower",
+            alpha=image_alpha,
+            zorder=-1,
+        )
+
+    # Grid
     for (x, y, z), params in world.grid.items():
         if z == 0:
-            rect = plt.Rectangle((x * grid_size, y * grid_size), grid_size, grid_size, 
-                                 color=world.AREA_PARAMS[params]["color"], 
-                                 alpha=world.AREA_PARAMS[params]["alpha"])
+            rect = plt.Rectangle(
+                (x * grid_size, y * grid_size),
+                grid_size,
+                grid_size,
+                color=world.AREA_PARAMS[params]["color"],
+                alpha=world.AREA_PARAMS[params]["alpha"],
+            )
             ax.add_patch(rect)
 
-    # Define colors for drones.
-    colors = ['green', 'blue', 'magenta', 'orange', 'cyan']
-    n = len(A_list) if A_list is not None else 0
+    # Helper to normalize point input
+    def as_xy(p):
+        if p is None:
+            return None
+        if isinstance(p, dict):
+            return float(p["x"]), float(p["y"])
+        return float(p[0]), float(p[1])
 
-    if trajectories is not None and A_list is not None and B_list is not None:
-        for i in range(n):
-            # Plot starting point (A) as a circle.
-            ax.scatter(A_list[i]["x"], A_list[i]["y"], color=colors[i % len(colors)], s=50, marker='o', label=f"Drone {i+1} A")
-            # Plot destination (B) as a circle.
-            ax.scatter(B_list[i]["x"], B_list[i]["y"], color=colors[(i+1) % len(colors)], s=50, marker='o', label=f"Drone {i+1} B")
-            # Plot intermediate targets with the same color as the drone.
-            if all_targets is not None and len(all_targets) > i and all_targets[i]:
-                # Convert each target to numpy array, supporting both dicts and (x, y) tuples.
-                pts = np.array([
-                    [pt["x"], pt["y"]] if isinstance(pt, dict) else [pt[0], pt[1]]
-                    for pt in all_targets[i]
-                ])
-                if pts.size > 0:
-                    ax.scatter(pts[:, 0], pts[:, 1], color=colors[i % len(colors)], s=30)
-                    for j, pt in enumerate(pts, 1):
-                        ax.text(pt[0] + 5, pt[1] + 5, f"{j}", color=colors[i % len(colors)], fontsize=8)
-            # Plot trajectory.
-            traj_arr = np.array(trajectories[i])
-            ax.plot(traj_arr[:, 0], traj_arr[:, 1], linestyle='--', lw=1.5, color=colors[i % len(colors)])
-    
+    plotted_anything = False
+    color = "blue"
+
+    # Start point
+    A_xy = as_xy(A)
+    if A_xy is not None:
+        ax.scatter(A_xy[0], A_xy[1], color=color, s=60, marker="o", label="Start A")
+        plotted_anything = True
+
+    # End point
+    B_xy = as_xy(B)
+    if B_xy is not None:
+        ax.scatter(B_xy[0], B_xy[1], color="tab:green", s=60, marker="o", label="Goal B")
+        plotted_anything = True
+
+    # Targets
+    if targets:
+        pts = np.array([as_xy(t) for t in targets if as_xy(t) is not None], dtype=float)
+        if pts.size > 0:
+            ax.scatter(pts[:, 0], pts[:, 1], color=color, s=30, label="Targets")
+            for j, pt in enumerate(pts, 1):
+                ax.text(pt[0] + 5, pt[1] + 5, f"{j}", color=color, fontsize=8)
+            plotted_anything = True
+
+    # Trajectory
+    if trajectory is not None:
+        traj_arr = np.array(trajectory, dtype=float)
+        if traj_arr.ndim == 2 and traj_arr.shape[1] >= 2 and len(traj_arr) > 0:
+            ax.plot(traj_arr[:, 0], traj_arr[:, 1], linestyle="--", lw=1.5, color=color, label="Trajectory")
+            plotted_anything = True
+
     ax.set_xlabel("X (m)")
     ax.set_ylabel("Y (m)")
     ax.set_title(f"2D World '{world.world_name}' XY")
     ax.set_xlim(0, world.max_world_size)
     ax.set_ylim(0, world.max_world_size)
-    ax.legend(loc='upper left')
     ax.grid(True)
+
+    if plotted_anything:
+        ax.legend(loc="upper left")
+
     if save:
-        plt.savefig(f"{save_folder}/trajectory_{world.world_name}.png", dpi=300)
+        plt.savefig(f"{save_folder}/trajectory_{world.world_name}.png", dpi=300, bbox_inches="tight")
     plt.show()

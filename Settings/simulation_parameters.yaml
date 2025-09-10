@@ -1,6 +1,6 @@
 # Simulation parameters
 dt: 0.008 # Time sampling for dynamic simulation
-simulation_time: 70 # seconds
+simulation_time: 150 # seconds
 frame_skip: 10 # Number of frames to skip for smoother animation
 threshold: 2.0  # Stop simulation threshold
 target_shift_threshold_distance: 2 # Shift to next segment threshold 
