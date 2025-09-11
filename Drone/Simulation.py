@@ -1,6 +1,6 @@
 # Author: Andrea Vaiuso
-# Version: 2.2
-# Date: 31.07.2025
+# Version: 2.3
+# Date: 10.09.2025
 # Description: This module defines the Simulation class for simulating a drone's flight path with dynamic targets,
 # wind effects, and noise emissions. It includes methods for setting wind conditions, computing dynamic targets,
 # and running the simulation with data collection.
@@ -121,7 +121,8 @@ class Simulation:
     def startSimulation(self, stop_at_target: bool = True,
                         stop_sim_if_not_moving: bool = False,
                         use_static_target: bool = False,
-                        verbose: bool = True):
+                        verbose: bool = True,
+                        reset_drone_state: bool = True):
         """
         Start the simulation of the drone following dynamic or static targets along the waypoints.
         Parameters:
@@ -135,11 +136,12 @@ class Simulation:
         # Reset runtime and histories
         self.simulation_time = 0.0
         
-        # Clear previous histories
-        self._clear_histories()
-
-        # Reset drone state to initial conditions
-        self.drone.reset_state() 
+        if reset_drone_state:
+            # Clear previous histories
+            self._clear_histories()
+            # Reset drone state to initial conditions
+            self.drone.reset_state()
+            self.current_seg_idx = 0
 
         # Initialize histories for dynamic targeting
         self.max_target_length = [0.0] * len(self.waypoints)
@@ -403,6 +405,8 @@ class Simulation:
         self.delta_t_history.clear()
         self.distance_history.clear()
         self.seg_idx_history.clear()
+        self.noise_penalty_history.clear()
+        self.altitude_penalty_history.clear()
 
         self.has_moved = True
         self.has_reached_target = False
