@@ -7,13 +7,13 @@ class PSOOptimizer(MetaHeuristicOptimizer):
 
     def __init__(self, simulation_object: Simulation, 
                 config_file: str,
+                A: tuple,
+                B: tuple,
+                max_perturbation_offset,
+                n_points,
                 n_generations: int = 100,
                 swarm_size: int = 30,
-                n_points: int = 5,
-                max_perturbation_offset: float = 500,
                 max_velocity: float = 20,
-                A: tuple = (0, 0, 0),
-                B: tuple = (1000, 1000, 1000),
                 verbose: bool = True):
         super().__init__(simulation_object=simulation_object, 
                          opt_method_name="PSO", 
@@ -32,47 +32,19 @@ class PSOOptimizer(MetaHeuristicOptimizer):
         self.global_best_cost = np.inf
         self.global_best_pos = None
 
-    def decode_particle(self, particle: np.ndarray) -> dict:
-        """Decode a particle array (list of perturbation respect to default point positions) into a list of waypoints"""
-        perturbations = []
-        for i in range(self.n_points):
-            idx = i * 4
-            # waypoint: x, y, z, vel
-            p = (particle[idx], particle[idx + 1], particle[idx + 2], particle[idx + 3])
-            perturbations.append(p)
-        # Build the default set of waypoints: equally distributed between A and B
-        default_waypoints = []
-        pts = self.n_points+2
-        for i in range(pts):
-            alpha = i / (pts - 1) if pts > 1 else 0
-            x = self.A[0] + alpha * (self.B[0] - self.A[0])
-            y = self.A[1] + alpha * (self.B[1] - self.A[1])
-            z = self.A[2] + alpha * (self.B[2] - self.A[2])
-            vel = 5.0
-            default_waypoints.append((x, y, z, vel))
-        # Remove first and last (A and B)
-        default_waypoints = default_waypoints[1:-1]
-        # Apply perturbations to default waypoints
-        waypoints = []
-        for i in range(self.n_points):
-            wp = default_waypoints[i]
-            perturbation = perturbations[i]
-            # Apply perturbation: (x, y, z, vel) + (dx, dy, dz, dvel)
-            new_wp = {
-                'x': wp[0] + perturbation[0],
-                'y': wp[1] + perturbation[1],
-                'z': wp[2] + perturbation[2],
-                'v': perturbation[3],
-            }
-            waypoints.append(new_wp)
-        waypoints.append({'x': self.B[0], 'y': self.B[1], 'z': self.B[2], 'v': 5.0})  # Ensure the last waypoint is B
-        return waypoints
+    def optimize(self, seed=42):
 
-    def optimize(self):
-        rng = np.random.default_rng(42)
+        low_bounds, high_bounds = self.build_particle_bounds(
+            self.A, self.B, self.n_points, 
+            self.max_perturbation_offset, 
+            self.max_velocity, 
+            world_min=0, world_max=self.simulation_object.world.max_world_size,
+        )
+
+        rng = np.random.default_rng(seed)
         particles_pos = rng.uniform(
-            low=[0, 0, 0, 0.0] * self.n_points,
-            high=[self.max_perturbation_offset, self.max_perturbation_offset, self.max_perturbation_offset, self.max_velocity] * self.n_points,
+            low=low_bounds,
+            high=high_bounds,
             size=(self.swarm_size, self.n_points * 4)
         )
         particles_vel = np.zeros_like(particles_pos)
@@ -82,11 +54,8 @@ class PSOOptimizer(MetaHeuristicOptimizer):
                 ] * self.n_points
             )
             particles_pos[0] = np.clip(init_particle, 
-                                       [0, 0, 0, 0.0] * self.n_points, 
-                                       [self.max_perturbation_offset, 
-                                        self.max_perturbation_offset, 
-                                        self.max_perturbation_offset, 
-                                        self.max_velocity] * self.n_points)
+                                       low_bounds, 
+                                       high_bounds)
         else:
             # Random initialization within bounds and max velocity
             init_particle = np.random.uniform(low=self.A, high=self.B, size=(self.n_points, 4))
@@ -98,7 +67,7 @@ class PSOOptimizer(MetaHeuristicOptimizer):
         try:
             for gen in range(self.n_generations):
                 for i in range(self.swarm_size):
-                    waypoints = self.decode_particle(particles_pos[i])
+                    waypoints = self.decode_particle(particles_pos[i], self.n_points, self.A, self.B)
                     costs_sim = self.run_simulation(waypoints)
                     total_cost = costs_sim["total_cost"]
                     self.log_step(waypoints)
@@ -121,8 +90,8 @@ class PSOOptimizer(MetaHeuristicOptimizer):
                     particles_pos[i] += particles_vel[i]
                     particles_pos[i] = np.clip(
                         particles_pos[i],
-                        [0, 0, 0, 0.0] * self.n_points,
-                        [self.max_perturbation_offset, self.max_perturbation_offset, self.max_perturbation_offset, self.max_velocity] * self.n_points
+                        low_bounds,
+                        high_bounds
                     )
         except KeyboardInterrupt:
             print(f"{self.get_alg_prefix()} Optimization interrupted by user.")
@@ -134,8 +103,6 @@ class PSOOptimizer(MetaHeuristicOptimizer):
                 print(f"{self.get_alg_prefix()} No valid solution found.")
                 return
 
-            best_params = self.decode_particle(self.global_best_pos)
-            self.save_results_in_file(best_params)
-            self.plot_costs_trend(save_fig=True)
+            best_params = self.decode_particle(self.global_best_pos, self.n_points, self.A, self.B)
             return best_params
 

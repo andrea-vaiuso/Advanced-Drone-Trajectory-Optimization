@@ -49,10 +49,12 @@ class MetaHeuristicOptimizer():
         self.study_dir = os.path.join(self.base_dir, folder_name)
         os.makedirs(self.study_dir, exist_ok=True)
         self.start_time = time()
-        self.optimize()
+        best_params = self.optimize()
         self.end_time = time() - self.start_time
         if self.verbose:
             print(f"{self.get_alg_prefix()} Optimization completed in {self.end_time:.2f} seconds.")
+        self.save_results_in_file(best_params)
+        self.plot_costs_trend(save_fig=True)
     
     def optimize(self):
         raise NotImplementedError("This method should be implemented by subclasses.")
@@ -79,6 +81,7 @@ class MetaHeuristicOptimizer():
         plt.legend()
         if save_fig:
             plt.savefig(os.path.join(self.study_dir, "costs_trend.png"), dpi=300, bbox_inches='tight')
+            print(f"{self.get_alg_prefix()} Cost trend plot saved to {os.path.join(self.study_dir, 'costs_trend.png')}")
         plt.show()
 
     def log_step(self, opt_params: list) -> None:
@@ -108,9 +111,9 @@ class MetaHeuristicOptimizer():
         self.last_time = current_time
 
     def calculate_costs(self,
-                        altitude_weight: float = 1.0,
+                        altitude_weight: float = 1e-2,
                         power_weight: float = 1e-4,
-                        noise_weight: float = 2e-25,
+                        noise_weight: float = 1.5e1,
                         completion_weight: float = 1000.0,
                         print_costs: bool = False,
                         weight_penalties: bool = True,
@@ -125,14 +128,14 @@ class MetaHeuristicOptimizer():
             altitude_rule_cost = 0
         time_cost = final_time
         p = 12  # norm order for noise cost
-        if self.simulation_object.swl_history:
-            swl = np.array(self.simulation_object.swl_history, dtype=float)
+        if self.simulation_object.spl_history:
+            spl = np.array(self.simulation_object.spl_history, dtype=float)
             if weight_penalties:
                 # Elementwise multiply the sound power levels by the noise penalties
-                swl_weighted = swl * noise_penalty_history
+                spl_weighted = spl * noise_penalty_history
             else:
-                swl_weighted = swl
-            noise_cost = noise_weight * (np.linalg.norm(swl_weighted, ord=p)**p + np.max(swl))
+                spl_weighted = spl
+            noise_cost = np.mean(spl_weighted) * noise_weight
         else:
             noise_cost = 0.0
 
@@ -190,7 +193,7 @@ class MetaHeuristicOptimizer():
         results = {
             'Optimization Algorithm': self.opt_method_name,
             'Best Parameters Found': best_params,
-            'Best Cost': min(self.costs_dict_history),
+            'Best Cost': min(self.costs_history),
             'Total time (s)': self.end_time,
             'Number of iterations': len(self.costs_history),
             'Avg step time (s)': self.end_time / len(self.costs_history) if self.costs_history else None,
@@ -198,3 +201,71 @@ class MetaHeuristicOptimizer():
         }
         with open(os.path.join(self.study_dir, "optimization_results.json"), 'w') as f:
             json.dump(results, f, indent=4)
+        print(f"{self.get_alg_prefix()} Results saved to {os.path.join(self.study_dir, 'optimization_results.json')}")
+
+    @staticmethod
+    def decode_particle(particle: np.ndarray, n_points: int, A, B) -> list:
+        """
+        Interpret particle entries as absolute spatial offsets and absolute speeds.
+        For each internal waypoint i, particle has [dx_i, dy_i, dz_i, v_i].
+        Offsets apply to a straight line from A to B.
+        """
+        # Build default internal waypoints on the line from A to B
+        pts = n_points + 2
+        default_wp = []
+        for i in range(1, pts - 1):
+            alpha = i / (pts - 1)
+            x = A[0] + alpha * (B[0] - A[0])
+            y = A[1] + alpha * (B[1] - A[1])
+            z = A[2] + alpha * (B[2] - A[2])
+            default_wp.append((x, y, z))
+
+        waypoints = []
+        for i in range(n_points):
+            idx = 4 * i
+            dx, dy, dz, v = particle[idx: idx + 4]
+            x0, y0, z0 = default_wp[i]
+            waypoints.append({'x': x0 + dx, 'y': y0 + dy, 'z': z0 + dz, 'v': float(v)})
+
+        # Ensure final waypoint is exactly B, keep a reasonable speed there
+        waypoints.append({'x': B[0], 'y': B[1], 'z': B[2], 'v': 5.0})
+        return waypoints
+    
+    @staticmethod
+    def linspace_internal_points(A, B, n_points):
+        pts = n_points + 2
+        default_wp = []
+        for i in range(1, pts - 1):
+            alpha = i / (pts - 1)
+            x = A[0] + alpha * (B[0] - A[0])
+            y = A[1] + alpha * (B[1] - A[1])
+            z = A[2] + alpha * (B[2] - A[2])
+            default_wp.append((x, y, z))
+        return np.array(default_wp)  # shape (n_points, 3)
+
+    @staticmethod
+    def build_particle_bounds(A, B, n_points, max_perturbation_offset, vmax,
+                            world_min=0.0, world_max=1000.0, v_min=5.0):
+        """
+        Returns low_bounds, high_bounds arrays of length n_points*4
+        that guarantee A→B defaults plus perturbations stay inside the world.
+        """
+        base = MetaHeuristicOptimizer.linspace_internal_points(A, B, n_points)  # (n_points, 3)
+
+        # Allowed offsets so that base + d stays in [world_min, world_max]
+        dmin = np.array([world_min, world_min, world_min]) - base
+        dmax = np.array([world_max, world_max, world_max]) - base
+
+        # Intersect with user max offset, elementwise
+        if max_perturbation_offset is not None:
+            cap = np.array([max_perturbation_offset]*3)
+            dmin = np.maximum(dmin, -cap)
+            dmax = np.minimum(dmax,  cap)
+
+        # Build flattened bounds [dx, dy, dz, v] for each waypoint
+        lows  = []
+        highs = []
+        for i in range(n_points):
+            lows.extend([dmin[i,0], dmin[i,1], dmin[i,2], v_min])
+            highs.extend([dmax[i,0], dmax[i,1], dmax[i,2], float(vmax)])
+        return np.array(lows, dtype=float), np.array(highs, dtype=float)

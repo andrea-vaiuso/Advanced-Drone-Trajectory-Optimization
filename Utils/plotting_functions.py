@@ -452,13 +452,15 @@ def show2DWorld(world: World, trajectory=None, A=None, B=None, targets=None,
     # Start point
     A_xy = as_xy(A)
     if A_xy is not None:
-        ax.scatter(A_xy[0], A_xy[1], color=color, s=60, marker="o", label="Start A")
+        ax.scatter(A_xy[0], A_xy[1], color="red", s=60, marker="o", label="Start A")
+        ax.text(A_xy[0] + 10, A_xy[1] + 10, "A", color="red", fontsize=10)
         plotted_anything = True
 
     # End point
     B_xy = as_xy(B)
     if B_xy is not None:
-        ax.scatter(B_xy[0], B_xy[1], color="tab:green", s=60, marker="o", label="Goal B")
+        ax.scatter(B_xy[0], B_xy[1], color="green", s=60, marker="o", label="Goal B")
+        ax.text(B_xy[0] + 10, B_xy[1] + 10, "B", color="green", fontsize=10)
         plotted_anything = True
 
     # Targets
@@ -467,7 +469,7 @@ def show2DWorld(world: World, trajectory=None, A=None, B=None, targets=None,
         if pts.size > 0:
             ax.scatter(pts[:, 0], pts[:, 1], color=color, s=30, label="Targets")
             for j, pt in enumerate(pts, 1):
-                ax.text(pt[0] + 5, pt[1] + 5, f"{j}", color=color, fontsize=8)
+                ax.text(pt[0] + 7, pt[1] + 7, f"{j}", color=color, fontsize=8)
             plotted_anything = True
 
     # Trajectory

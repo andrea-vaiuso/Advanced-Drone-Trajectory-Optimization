@@ -305,7 +305,7 @@ class QuadcopterModel:
         """
         return omega * 60 / (2 * np.pi)
     
-    def compute_rotor_effects(self):
+    def update_aerodynamic(self):
         # Compute thrust and thrust coefficient
         T = []
         Q = []
@@ -347,7 +347,7 @@ class QuadcopterModel:
         rpm1, rpm2, rpm3, rpm4 = self._mixer(u1, u2, u3, u4) 
         self.state["rpm"] = np.array([rpm1, rpm2, rpm3, rpm4]) 
 
-        self.compute_rotor_effects()  # Compute thrust, torque, and power from the rotors
+        self.update_aerodynamic()  # Compute thrust, torque, and power from the rotors
 
         self.thrust_no_wind = self.state['thrust'].copy()
         self.state['thrust'] = (np.array(self.state['thrust']) + self.delta_T).tolist()

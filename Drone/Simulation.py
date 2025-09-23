@@ -157,31 +157,44 @@ class Simulation:
         k_lookahead = 1.0
         num_steps = int(self.max_simulation_time / self.dt)
 
+        self.time_avg_target_computing = 0.0
+        self.time_avg_drone_update = 0.0
+        self.time_avg_wind_simulation = 0.0
+        self.time_avg_data_storage = 0.0
+
+
         # Main simulation loop
         for step in range(num_steps):
             current_time = step * self.dt
 
             # Update target
+            start_time = time.time()
             if use_static_target:
                 target_position, self.current_seg_idx, seg_end = self._compute_static_target(
                     self.current_seg_idx, seg_end)
             else:
                 target_position, self.current_seg_idx, seg_start, seg_end, v_des = self._compute_dynamic_target(
                     self.current_seg_idx, seg_start, seg_end, v_des, k_lookahead)
+            self.time_avg_target_computing += time.time() - start_time
             
 
             # Update drone state
+            start_time = time.time()
             self.drone.update_state({'x': target_position[0], 'y': target_position[1], 'z': target_position[2]},
                                      self.dt, verbose=False)
-            
+            self.time_avg_drone_update += time.time() - start_time
+
             # Update wind if set
+            start_time = time.time()
             if self.simulate_wind and len(self.wind_signals) >= 3:
                 wind_xyz_signal = np.array([self.wind_signals[0][step],
                                             self.wind_signals[1][step],
                                             self.wind_signals[2][step]])
                 self.drone.update_wind(wind_xyz_signal, simulate_wind=True)
+            self.time_avg_wind_simulation += time.time() - start_time
 
             # Store data at specified intervals
+            start_time = time.time()
             if step % self.frame_skip == 0:
                 self._store_log_data(current_time, target_position)
 
@@ -200,6 +213,8 @@ class Simulation:
                 elif self.drone.state['pos'][2] > param['max_altitude']:
                     altitude_penalty = abs(np.sqrt(self.drone.state['pos'][2]**2 - param['max_altitude']**2))
                 self.altitude_penalty_history.append(altitude_penalty)
+
+            self.time_avg_data_storage += time.time() - start_time
 
             # Check for final target reached only if all the other waypoints have been reached
             if stop_at_target and self.current_seg_idx == len(self.waypoints):
@@ -223,6 +238,10 @@ class Simulation:
 
         # End timer
         self.simulation_time = time.time() - t_0
+        self.time_avg_drone_update /= num_steps
+        self.time_avg_target_computing /= num_steps
+        self.time_avg_wind_simulation /= num_steps
+        self.time_avg_data_storage /= num_steps
         if verbose:
             print(f"Simulation completed in {self.simulation_time:.2f} seconds.")
 
