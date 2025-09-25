@@ -8,7 +8,7 @@ max_waypoints: 10
 termination_distance: 5.0
 action_bounds:
   low: [0.0, 0.0, 0.0, 2.0]
-  high: [1000.0, 1000.0, 200.0, 20.0]
+  high: [1000.0, 1000.0, 500.0, 20.0]
 cost_parameters:
   altitude_weight: 0.01
   power_weight: 0.0001
@@ -17,18 +17,18 @@ cost_parameters:
   save_costs_in_history: false
 
 # SAC hyperparameters
-total_timesteps: 2000
-learning_rate: 0.0003
-buffer_size: 50000
-batch_size: 128
-gamma: 0.99
-tau: 0.005
-train_freq: 1
-gradient_steps: 1
-ent_coef: "auto"
-target_update_interval: 1
-learning_starts: 1000
-policy: "MlpPolicy"
-log_interval: 1
-device: "auto"
-evaluation_episodes: 1
+total_timesteps: 2000 # Total number of timesteps for training
+learning_rate: 0.0003 # Learning rate for the optimizer
+buffer_size: 50000 # Size of the replay buffer
+batch_size: 128 # Batch size for sampling from the replay buffer
+gamma: 0.99 # Discount factor for future rewards
+tau: 0.005 # Soft update coefficient for target networks
+train_freq: 1 # Frequency of training steps
+gradient_steps: 1 # Number of gradient steps per training step
+ent_coef: "auto" # Entropy coefficient
+target_update_interval: 1 # Frequency of target network updates
+learning_starts: 1000 # Number of steps before training starts
+policy: "MlpPolicy" # Policy architecture
+log_interval: 1 # Logging interval
+device: "auto" # Device to use for training ("cpu", "cuda", or "auto")
+evaluation_episodes: 1 # Number of episodes for evaluation

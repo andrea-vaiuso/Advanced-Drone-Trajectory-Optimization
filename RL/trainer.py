@@ -6,7 +6,7 @@ import os
 from typing import Any, Dict, Iterable, List, Optional
 
 import yaml
-from gymnasium.vector import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3 import SAC
 
 from Drone.Simulation import Simulation
@@ -51,6 +51,8 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
         self.base_dir = os.path.join("RL", opt_name)
         os.makedirs(self.base_dir, exist_ok=True)
 
+        self.last_time = 0.0
+
         self.cost_parameters = rl_cfg.get("cost_parameters", {})
         self.best_cost: float = float("inf")
         self.best_trajectory: List[Dict[str, float]] = []
@@ -59,6 +61,7 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
     # ------------------------------------------------------------------
     # Abstract API
     # ------------------------------------------------------------------
+    
     def optimize(self) -> List[Dict[str, float]]:  # type: ignore[override]
         raise NotImplementedError
 
