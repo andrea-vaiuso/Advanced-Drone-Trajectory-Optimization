@@ -1,0 +1,34 @@
+# Reinforcement learning configuration for SAC
+algorithm_name: "SAC"
+set_initial_obs: true
+simulation_parameters_file: "Settings/simulation_parameters.yaml"
+
+# Environment settings
+max_waypoints: 10
+termination_distance: 5.0
+action_bounds:
+  low: [0.0, 0.0, 0.0, 2.0]
+  high: [1000.0, 1000.0, 200.0, 20.0]
+cost_parameters:
+  altitude_weight: 0.01
+  power_weight: 0.0001
+  noise_weight: 15.0
+  completion_weight: 1000.0
+  save_costs_in_history: false
+
+# SAC hyperparameters
+total_timesteps: 2000
+learning_rate: 0.0003
+buffer_size: 50000
+batch_size: 128
+gamma: 0.99
+tau: 0.005
+train_freq: 1
+gradient_steps: 1
+ent_coef: "auto"
+target_update_interval: 1
+learning_starts: 1000
+policy: "MlpPolicy"
+log_interval: 1
+device: "auto"
+evaluation_episodes: 1
