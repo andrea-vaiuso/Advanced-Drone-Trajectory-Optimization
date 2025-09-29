@@ -59,6 +59,7 @@ class DroneTrajectoryEnv(Env):
         raw_low = np.array(action_bounds.get("low", [-100.0, -100.0, -100.0, 0.0]), dtype=float)
         raw_high = np.array(action_bounds.get("high", [100.0, 100.0, 100.0, 20.0]), dtype=float)
         if raw_low.shape != (4,) or raw_high.shape != (4,):
+
             raise ValueError("action_bounds must define 'low' and 'high' arrays with four elements each.")
 
         self.world_min_bounds, self.world_max_bounds = self._infer_world_bounds()
