@@ -56,11 +56,30 @@ class DroneTrajectoryEnv(Env):
         self.termination_distance = float(termination_distance)
         self.cost_parameters = cost_parameters or {}
 
-        raw_low = np.array(action_bounds.get("low", [-100.0, -100.0, -100.0, 0.0]), dtype=float)
-        raw_high = np.array(action_bounds.get("high", [100.0, 100.0, 100.0, 20.0]), dtype=float)
-        if raw_low.shape != (4,) or raw_high.shape != (4,):
+        raw_low = np.array(action_bounds.get("low", [-100.0, -100.0, -100.0, 0.0, 0.0]), dtype=float)
+        raw_high = np.array(action_bounds.get("high", [100.0, 100.0, 100.0, 20.0, 1.0]), dtype=float)
 
-            raise ValueError("action_bounds must define 'low' and 'high' arrays with four elements each.")
+        if raw_low.shape not in {(4,), (5,)} or raw_high.shape != raw_low.shape:
+            raise ValueError(
+                "action_bounds must define 'low' and 'high' arrays with four or five elements each."
+            )
+
+        if raw_low.shape == (4,):
+            raw_low = np.concatenate([raw_low, [0.0]])
+            raw_high = np.concatenate([raw_high, [1.0]])
+
+        self.world_min_bounds, self.world_max_bounds = self._infer_world_bounds()
+        (
+            self.low_action,
+            self.high_action,
+            self.per_waypoint_low,
+            self.per_waypoint_high,
+        ) = self._initialize_action_bounds(raw_low, raw_high)
+
+        self.speed_index = 3
+        self.stop_action_index = 4 if self.low_action.size > 4 else None
+        self.stop_threshold = 0.5
+
 
         self.world_min_bounds, self.world_max_bounds = self._infer_world_bounds()
         (
@@ -119,6 +138,16 @@ class DroneTrajectoryEnv(Env):
     def step(self, action: np.ndarray):  # type: ignore[override]
         action = np.clip(action, self.low_action, self.high_action).astype(float)
         action = self._clip_action_for_index(action, self.current_step)
+
+        if self._should_request_stop(action):
+            return self._finalize_episode(
+                reached_goal=False,
+                forced_speed=float(action[self.speed_index]),
+                stopped_by_agent=True,
+                last_waypoint=None,
+            )
+
+
         waypoint = self._build_waypoint(action, self.current_step)
         self.current_waypoints.append(waypoint)
         self.simulation.waypoints = [deepcopy(waypoint)]
@@ -144,6 +173,7 @@ class DroneTrajectoryEnv(Env):
             'costs': costs,
             'waypoint': waypoint,
             'trajectory': deepcopy(self.current_waypoints),
+            'stopped_by_agent': False,
         }
 
         self.current_step += 1
@@ -152,44 +182,14 @@ class DroneTrajectoryEnv(Env):
         exhausted_budget = self.current_step >= self.max_waypoints
 
         if reached_goal or exhausted_budget:
-            if not reached_goal:
-                # Force the final leg toward the endpoint
-                final_wp = self._build_absolute_waypoint(self.final_target, float(self.high_action[-1]))
-                self.simulation.waypoints = [final_wp]
-                self.simulation.current_seg_idx = 0
-                self.simulation.startSimulation(
-                    stop_at_target=True,
-                    verbose=False,
-                    stop_sim_if_not_moving=True,
-                    use_static_target=False,
-                    reset_drone_state=False,
-                )
-                self.current_waypoints.append(final_wp)
-                costs = self._calculate_costs()
-                reward = -float(costs['total_cost'])
-                info['costs'] = costs
-                info['trajectory'] = deepcopy(self.current_waypoints)
-            else:
-                # Ensure the final target is explicitly stored in the trajectory
-                if np.linalg.norm(self.final_target - np.array([
-                    info['trajectory'][-1]['x'],
-                    info['trajectory'][-1]['y'],
-                    info['trajectory'][-1]['z']
-                ])) > 1e-6:
-                    final_wp = self._build_absolute_waypoint(
-                        self.final_target,
-                        float(info['trajectory'][-1]['v']),
-                    )
-                    self.current_waypoints.append(final_wp)
-                    info['trajectory'] = deepcopy(self.current_waypoints)
+            return self._finalize_episode(
+                reached_goal=reached_goal,
+                forced_speed=float(action[self.speed_index]),
+                stopped_by_agent=False,
+                last_waypoint=waypoint,
+                cached_costs=costs if reached_goal else None,
+            )
 
-            terminated = True
-            self.last_episode_data = {
-                'trajectory': deepcopy(self.current_waypoints),
-                'total_cost': float(costs['total_cost']),
-                'costs': {k: float(v) for k, v in costs.items()},
-            }
-            info['episode_data'] = deepcopy(self.last_episode_data)
 
         observation = self._get_observation()
         return observation, reward, terminated, truncated, info
@@ -197,6 +197,18 @@ class DroneTrajectoryEnv(Env):
     # ------------------------------------------------------------------
     # Helper functions
     # ------------------------------------------------------------------
+    def run_zero_waypoint_episode(self):
+        """Simulate an episode that travels directly from start to target."""
+
+        self.reset()
+        default_speed = self._default_terminal_speed()
+        return self._finalize_episode(
+            reached_goal=False,
+            forced_speed=default_speed,
+            stopped_by_agent=True,
+            last_waypoint=None,
+        )
+
     def _calculate_costs(self) -> Dict[str, float]:
         kwargs = dict(self.cost_parameters)
         kwargs.setdefault('save_costs_in_history', False)
@@ -208,7 +220,86 @@ class DroneTrajectoryEnv(Env):
         offset = action[:3]
         position = reference + offset
         position = np.clip(position, self.world_min_bounds, self.world_max_bounds)
-        return self._build_absolute_waypoint(position, float(action[3]))
+        return self._build_absolute_waypoint(position, float(action[self.speed_index]))
+
+    def _should_request_stop(self, action: np.ndarray) -> bool:
+        if self.stop_action_index is None:
+            return False
+        stop_signal = float(action[self.stop_action_index])
+        return stop_signal <= self.stop_threshold
+
+    def _finalize_episode(
+        self,
+        reached_goal: bool,
+        forced_speed: float,
+        stopped_by_agent: bool,
+        last_waypoint: Optional[Dict[str, float]],
+        cached_costs: Optional[Dict[str, float]] = None,
+    ):
+        if reached_goal:
+            final_wp = self._ensure_final_target_present(
+                speed=(last_waypoint['v'] if last_waypoint else forced_speed),
+                run_simulation=False,
+            )
+            costs = cached_costs if cached_costs is not None else self._calculate_costs()
+            reward = -float(costs['total_cost'])
+        else:
+            final_wp = self._ensure_final_target_present(speed=forced_speed, run_simulation=True)
+            costs = self._calculate_costs()
+            reward = -float(costs['total_cost'])
+
+        info: Dict = {
+            'costs': costs,
+            'waypoint': last_waypoint if last_waypoint is not None else final_wp,
+            'trajectory': deepcopy(self.current_waypoints),
+            'stopped_by_agent': stopped_by_agent,
+        }
+
+        self.last_episode_data = {
+            'trajectory': deepcopy(self.current_waypoints),
+            'total_cost': float(costs['total_cost']),
+            'costs': {k: float(v) for k, v in costs.items()},
+        }
+        info['episode_data'] = deepcopy(self.last_episode_data)
+
+        observation = self._get_observation()
+        terminated = True
+        truncated = False
+        return observation, reward, terminated, truncated, info
+
+    def _ensure_final_target_present(self, speed: Optional[float], run_simulation: bool) -> Dict[str, float]:
+        last_wp = self.current_waypoints[-1] if self.current_waypoints else None
+        if last_wp is not None:
+            last_pos = np.array([last_wp['x'], last_wp['y'], last_wp['z']], dtype=float)
+            if np.linalg.norm(last_pos - self.final_target) <= 1e-6:
+                return last_wp
+
+        base_speed = speed if speed is not None else (
+            last_wp['v'] if last_wp is not None else self._default_terminal_speed()
+        )
+        final_wp = self._build_absolute_waypoint(self.final_target, float(base_speed))
+
+        if run_simulation:
+            reset_state = self._needs_reset
+            self.simulation.waypoints = [deepcopy(final_wp)]
+            self.simulation.current_seg_idx = 0
+            self.simulation.startSimulation(
+                stop_at_target=True,
+                verbose=False,
+                stop_sim_if_not_moving=True,
+                use_static_target=False,
+                reset_drone_state=reset_state,
+            )
+            self._needs_reset = False
+
+        self.current_waypoints.append(final_wp)
+        return final_wp
+
+    def _default_terminal_speed(self) -> float:
+        low = float(self.low_action[self.speed_index])
+        high = float(self.high_action[self.speed_index])
+        midpoint = 0.5 * (low + high)
+        return float(np.clip(midpoint, low, high))
 
     def _get_reference_point(self, index: int) -> np.ndarray:
         if self.reference_points.size == 0:
@@ -290,7 +381,7 @@ class DroneTrajectoryEnv(Env):
         if self.max_waypoints <= 0:
             low_action = raw_low.astype(np.float32)
             high_action = raw_high.astype(np.float32)
-            empty = np.zeros((0, 4), dtype=float)
+            empty = np.zeros((0, raw_low.size), dtype=float)
             return low_action, high_action, empty, empty
 
         offset_candidates = np.concatenate((raw_low[:3], raw_high[:3]))
@@ -312,11 +403,21 @@ class DroneTrajectoryEnv(Env):
 
         world_low = world_low_flat.reshape(self.max_waypoints, 4)
         world_high = world_high_flat.reshape(self.max_waypoints, 4)
-        base_low = np.broadcast_to(raw_low, (self.max_waypoints, 4))
-        base_high = np.broadcast_to(raw_high, (self.max_waypoints, 4))
+        base_low_core = np.broadcast_to(raw_low[:4], (self.max_waypoints, 4))
+        base_high_core = np.broadcast_to(raw_high[:4], (self.max_waypoints, 4))
 
-        per_waypoint_low = np.maximum(world_low, base_low)
-        per_waypoint_high = np.minimum(world_high, base_high)
+        per_waypoint_low_core = np.maximum(world_low, base_low_core)
+        per_waypoint_high_core = np.minimum(world_high, base_high_core)
+
+        if raw_low.size > 4:
+            gating_low = np.broadcast_to(raw_low[4:], (self.max_waypoints, raw_low.size - 4))
+            gating_high = np.broadcast_to(raw_high[4:], (self.max_waypoints, raw_low.size - 4))
+            per_waypoint_low = np.concatenate((per_waypoint_low_core, gating_low), axis=1)
+            per_waypoint_high = np.concatenate((per_waypoint_high_core, gating_high), axis=1)
+        else:
+            per_waypoint_low = per_waypoint_low_core
+            per_waypoint_high = per_waypoint_high_core
+
 
         if np.any(per_waypoint_low > per_waypoint_high):
             raise ValueError("Inconsistent action bounds: some waypoint intervals are invalid.")

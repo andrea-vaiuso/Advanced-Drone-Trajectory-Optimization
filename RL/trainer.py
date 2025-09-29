@@ -122,6 +122,18 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
 
         return _factory
 
+    def _run_zero_waypoint_episode(self, env_factory) -> None:
+        """Execute a baseline episode that keeps the trajectory as a straight line."""
+
+        env = env_factory()
+        try:
+            _, _, _, _, info = env.run_zero_waypoint_episode()
+            episode_data = info.get("episode_data") if info else None
+            if episode_data:
+                self.record_episode(episode_data)
+        finally:
+            env.close()
+
     def record_episode(self, episode_data: Dict[str, Any]) -> None:
         total_cost = float(episode_data["total_cost"])
         trajectory = self._convert_waypoints(episode_data["trajectory"])
@@ -201,6 +213,7 @@ class SACTrajectoryTrainer(BaseRLTrainer):
 
     def optimize(self) -> List[Dict[str, float]]:  # type: ignore[override]
         env_factory = self._build_env_factory()
+        self._run_zero_waypoint_episode(env_factory)
         train_env = DummyVecEnv([env_factory])
 
         sac_kwargs = self._build_sac_kwargs(train_env)
