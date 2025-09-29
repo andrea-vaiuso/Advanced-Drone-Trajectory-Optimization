@@ -56,12 +56,22 @@ class DroneTrajectoryEnv(Env):
         self.termination_distance = float(termination_distance)
         self.cost_parameters = cost_parameters or {}
 
-        self.low_action = np.array(action_bounds.get("low", [0.0, 0.0, 0.0, 0.0]), dtype=np.float32)
-        self.high_action = np.array(action_bounds.get("high", [1000.0, 1000.0, 200.0, 20.0]), dtype=np.float32)
+        self.low_action = np.array(action_bounds.get("low", [-100.0, -100.0, -100.0, 0.0]), dtype=np.float32)
+        self.high_action = np.array(action_bounds.get("high", [100.0, 100.0, 100.0, 20.0]), dtype=np.float32)
         if self.low_action.shape != (4,) or self.high_action.shape != (4,):
             raise ValueError("action_bounds must define 'low' and 'high' arrays with four elements each.")
 
         self.action_space = spaces.Box(low=self.low_action, high=self.high_action, dtype=np.float32)
+
+        # Reference internal waypoints on the direct A→B segment.
+        self.reference_points = np.asarray(
+            MetaHeuristicOptimizer.linspace_internal_points(
+                self.start_point,
+                self.final_target,
+                self.max_waypoints,
+            ),
+            dtype=float,
+        )
 
         state_dim = self._compute_state_dimension()
         obs_low = np.full(state_dim, -np.inf, dtype=np.float32)
@@ -99,7 +109,7 @@ class DroneTrajectoryEnv(Env):
 
     def step(self, action: np.ndarray):  # type: ignore[override]
         action = np.clip(action, self.low_action, self.high_action).astype(float)
-        waypoint = self._build_waypoint(action)
+        waypoint = self._build_waypoint(action, self.current_step)
         self.current_waypoints.append(waypoint)
         self.simulation.waypoints = [deepcopy(waypoint)]
         self.simulation.current_seg_idx = 0
@@ -134,7 +144,7 @@ class DroneTrajectoryEnv(Env):
         if reached_goal or exhausted_budget:
             if not reached_goal:
                 # Force the final leg toward the endpoint
-                final_wp = self._build_waypoint(np.concatenate((self.final_target, [self.high_action[-1]])))
+                final_wp = self._build_absolute_waypoint(self.final_target, float(self.high_action[-1]))
                 self.simulation.waypoints = [final_wp]
                 self.simulation.current_seg_idx = 0
                 self.simulation.startSimulation(
@@ -156,7 +166,10 @@ class DroneTrajectoryEnv(Env):
                     info['trajectory'][-1]['y'],
                     info['trajectory'][-1]['z']
                 ])) > 1e-6:
-                    final_wp = self._build_waypoint(np.concatenate((self.final_target, [info['trajectory'][-1]['v']])))
+                    final_wp = self._build_absolute_waypoint(
+                        self.final_target,
+                        float(info['trajectory'][-1]['v']),
+                    )
                     self.current_waypoints.append(final_wp)
                     info['trajectory'] = deepcopy(self.current_waypoints)
 
@@ -180,12 +193,25 @@ class DroneTrajectoryEnv(Env):
         result = self.cost_evaluator.calculate_costs(**kwargs)
         return {k: float(v) for k, v in result.items()}
 
-    def _build_waypoint(self, action: np.ndarray) -> Dict[str, float]:
+    def _build_waypoint(self, action: np.ndarray, index: int) -> Dict[str, float]:
+        reference = self._get_reference_point(index)
+        offset = action[:3]
+        position = reference + offset
+        return self._build_absolute_waypoint(position, float(action[3]))
+
+    def _get_reference_point(self, index: int) -> np.ndarray:
+        if self.reference_points.size == 0:
+            return self.final_target.astype(float)
+        clipped_index = min(max(index, 0), len(self.reference_points) - 1)
+        return self.reference_points[clipped_index]
+
+    @staticmethod
+    def _build_absolute_waypoint(position: np.ndarray, speed: float) -> Dict[str, float]:
         return {
-            'x': float(action[0]),
-            'y': float(action[1]),
-            'z': float(action[2]),
-            'v': float(action[3]),
+            'x': float(position[0]),
+            'y': float(position[1]),
+            'z': float(position[2]),
+            'v': float(speed),
         }
 
     def _get_observation(self) -> np.ndarray:
