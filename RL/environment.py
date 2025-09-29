@@ -80,6 +80,15 @@ class DroneTrajectoryEnv(Env):
         self.stop_action_index = 4 if self.low_action.size > 4 else None
         self.stop_threshold = 0.5
 
+
+        self.world_min_bounds, self.world_max_bounds = self._infer_world_bounds()
+        (
+            self.low_action,
+            self.high_action,
+            self.per_waypoint_low,
+            self.per_waypoint_high,
+        ) = self._initialize_action_bounds(raw_low, raw_high)
+
         self.action_space = spaces.Box(low=self.low_action, high=self.high_action, dtype=np.float32)
 
         # Reference internal waypoints on the direct A→B segment.
@@ -138,6 +147,7 @@ class DroneTrajectoryEnv(Env):
                 last_waypoint=None,
             )
 
+
         waypoint = self._build_waypoint(action, self.current_step)
         self.current_waypoints.append(waypoint)
         self.simulation.waypoints = [deepcopy(waypoint)]
@@ -179,6 +189,7 @@ class DroneTrajectoryEnv(Env):
                 last_waypoint=waypoint,
                 cached_costs=costs if reached_goal else None,
             )
+
 
         observation = self._get_observation()
         return observation, reward, terminated, truncated, info
@@ -406,6 +417,7 @@ class DroneTrajectoryEnv(Env):
         else:
             per_waypoint_low = per_waypoint_low_core
             per_waypoint_high = per_waypoint_high_core
+
 
         if np.any(per_waypoint_low > per_waypoint_high):
             raise ValueError("Inconsistent action bounds: some waypoint intervals are invalid.")
