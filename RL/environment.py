@@ -56,12 +56,30 @@ class DroneTrajectoryEnv(Env):
         self.termination_distance = float(termination_distance)
         self.cost_parameters = cost_parameters or {}
 
-        self.low_action = np.array(action_bounds.get("low", [0.0, 0.0, 0.0, 0.0]), dtype=np.float32)
-        self.high_action = np.array(action_bounds.get("high", [1000.0, 1000.0, 200.0, 20.0]), dtype=np.float32)
-        if self.low_action.shape != (4,) or self.high_action.shape != (4,):
+        raw_low = np.array(action_bounds.get("low", [-100.0, -100.0, -100.0, 0.0]), dtype=float)
+        raw_high = np.array(action_bounds.get("high", [100.0, 100.0, 100.0, 20.0]), dtype=float)
+        if raw_low.shape != (4,) or raw_high.shape != (4,):
             raise ValueError("action_bounds must define 'low' and 'high' arrays with four elements each.")
 
+        self.world_min_bounds, self.world_max_bounds = self._infer_world_bounds()
+        (
+            self.low_action,
+            self.high_action,
+            self.per_waypoint_low,
+            self.per_waypoint_high,
+        ) = self._initialize_action_bounds(raw_low, raw_high)
+
         self.action_space = spaces.Box(low=self.low_action, high=self.high_action, dtype=np.float32)
+
+        # Reference internal waypoints on the direct A→B segment.
+        self.reference_points = np.asarray(
+            MetaHeuristicOptimizer.linspace_internal_points(
+                self.start_point,
+                self.final_target,
+                self.max_waypoints,
+            ),
+            dtype=float,
+        )
 
         state_dim = self._compute_state_dimension()
         obs_low = np.full(state_dim, -np.inf, dtype=np.float32)
@@ -99,7 +117,8 @@ class DroneTrajectoryEnv(Env):
 
     def step(self, action: np.ndarray):  # type: ignore[override]
         action = np.clip(action, self.low_action, self.high_action).astype(float)
-        waypoint = self._build_waypoint(action)
+        action = self._clip_action_for_index(action, self.current_step)
+        waypoint = self._build_waypoint(action, self.current_step)
         self.current_waypoints.append(waypoint)
         self.simulation.waypoints = [deepcopy(waypoint)]
         self.simulation.current_seg_idx = 0
@@ -134,7 +153,7 @@ class DroneTrajectoryEnv(Env):
         if reached_goal or exhausted_budget:
             if not reached_goal:
                 # Force the final leg toward the endpoint
-                final_wp = self._build_waypoint(np.concatenate((self.final_target, [self.high_action[-1]])))
+                final_wp = self._build_absolute_waypoint(self.final_target, float(self.high_action[-1]))
                 self.simulation.waypoints = [final_wp]
                 self.simulation.current_seg_idx = 0
                 self.simulation.startSimulation(
@@ -156,7 +175,10 @@ class DroneTrajectoryEnv(Env):
                     info['trajectory'][-1]['y'],
                     info['trajectory'][-1]['z']
                 ])) > 1e-6:
-                    final_wp = self._build_waypoint(np.concatenate((self.final_target, [info['trajectory'][-1]['v']])))
+                    final_wp = self._build_absolute_waypoint(
+                        self.final_target,
+                        float(info['trajectory'][-1]['v']),
+                    )
                     self.current_waypoints.append(final_wp)
                     info['trajectory'] = deepcopy(self.current_waypoints)
 
@@ -180,12 +202,26 @@ class DroneTrajectoryEnv(Env):
         result = self.cost_evaluator.calculate_costs(**kwargs)
         return {k: float(v) for k, v in result.items()}
 
-    def _build_waypoint(self, action: np.ndarray) -> Dict[str, float]:
+    def _build_waypoint(self, action: np.ndarray, index: int) -> Dict[str, float]:
+        reference = self._get_reference_point(index)
+        offset = action[:3]
+        position = reference + offset
+        position = np.clip(position, self.world_min_bounds, self.world_max_bounds)
+        return self._build_absolute_waypoint(position, float(action[3]))
+
+    def _get_reference_point(self, index: int) -> np.ndarray:
+        if self.reference_points.size == 0:
+            return self.final_target.astype(float)
+        clipped_index = min(max(index, 0), len(self.reference_points) - 1)
+        return self.reference_points[clipped_index]
+
+    @staticmethod
+    def _build_absolute_waypoint(position: np.ndarray, speed: float) -> Dict[str, float]:
         return {
-            'x': float(action[0]),
-            'y': float(action[1]),
-            'z': float(action[2]),
-            'v': float(action[3]),
+            'x': float(position[0]),
+            'y': float(position[1]),
+            'z': float(position[2]),
+            'v': float(speed),
         }
 
     def _get_observation(self) -> np.ndarray:
@@ -226,3 +262,71 @@ class DroneTrajectoryEnv(Env):
             np.array([0.0], dtype=np.float32),
         ]
         return int(np.sum([arr.size for arr in dummy_obs]))
+
+    def _infer_world_bounds(self) -> Tuple[np.ndarray, np.ndarray]:
+        world = getattr(self.simulation, "world", None)
+        world_min = np.zeros(3, dtype=float)
+        world_max_value: Optional[float] = None
+        if world is not None:
+            max_world_size = getattr(world, "max_world_size", None)
+            if max_world_size is not None:
+                try:
+                    world_max_value = float(max_world_size)
+                except (TypeError, ValueError):
+                    world_max_value = None
+
+        if world_max_value is None or world_max_value <= 0:
+            coords = np.vstack([self.start_point, self.final_target]) if self.start_point.size else np.zeros((0, 3))
+            fallback = float(np.max(coords)) if coords.size else 0.0
+            world_max_value = max(fallback, 1.0)
+
+        world_max = np.full(3, world_max_value, dtype=float)
+        return world_min, world_max
+
+    def _initialize_action_bounds(
+        self, raw_low: np.ndarray, raw_high: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        if self.max_waypoints <= 0:
+            low_action = raw_low.astype(np.float32)
+            high_action = raw_high.astype(np.float32)
+            empty = np.zeros((0, 4), dtype=float)
+            return low_action, high_action, empty, empty
+
+        offset_candidates = np.concatenate((raw_low[:3], raw_high[:3]))
+        finite_candidates = np.abs(offset_candidates[np.isfinite(offset_candidates)])
+        max_offset = float(np.max(finite_candidates)) if finite_candidates.size else None
+        if max_offset is not None and max_offset <= 0:
+            max_offset = None
+
+        world_low_flat, world_high_flat = MetaHeuristicOptimizer.build_particle_bounds(
+            self.start_point,
+            self.final_target,
+            self.max_waypoints,
+            max_perturbation_offset=max_offset,
+            vmax=float(raw_high[3]),
+            world_min=float(self.world_min_bounds[0]),
+            world_max=float(self.world_max_bounds[0]),
+            v_min=float(raw_low[3]),
+        )
+
+        world_low = world_low_flat.reshape(self.max_waypoints, 4)
+        world_high = world_high_flat.reshape(self.max_waypoints, 4)
+        base_low = np.broadcast_to(raw_low, (self.max_waypoints, 4))
+        base_high = np.broadcast_to(raw_high, (self.max_waypoints, 4))
+
+        per_waypoint_low = np.maximum(world_low, base_low)
+        per_waypoint_high = np.minimum(world_high, base_high)
+
+        if np.any(per_waypoint_low > per_waypoint_high):
+            raise ValueError("Inconsistent action bounds: some waypoint intervals are invalid.")
+
+        low_action = per_waypoint_low.min(axis=0).astype(np.float32)
+        high_action = per_waypoint_high.max(axis=0).astype(np.float32)
+
+        return low_action, high_action, per_waypoint_low, per_waypoint_high
+
+    def _clip_action_for_index(self, action: np.ndarray, index: int) -> np.ndarray:
+        if index < 0 or index >= len(self.per_waypoint_low):
+            return action
+        clipped = np.clip(action, self.per_waypoint_low[index], self.per_waypoint_high[index])
+        return clipped

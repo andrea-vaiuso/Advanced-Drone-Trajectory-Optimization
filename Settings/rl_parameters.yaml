@@ -7,8 +7,8 @@ simulation_parameters_file: "Settings/simulation_parameters.yaml"
 max_waypoints: 10
 termination_distance: 5.0
 action_bounds:
-  low: [0.0, 0.0, 0.0, 2.0]
-  high: [1000.0, 1000.0, 500.0, 20.0]
+  low: [-250.0, -250.0, -250.0, 2.0]
+  high: [250.0, 250.0, 250.0, 20.0]
 cost_parameters:
   altitude_weight: 0.01
   power_weight: 0.0001

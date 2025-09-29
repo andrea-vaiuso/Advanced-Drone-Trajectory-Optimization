@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+from math import isclose
 from typing import Any, Dict, Iterable, List, Optional
 
 import yaml
@@ -124,12 +125,13 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
     def record_episode(self, episode_data: Dict[str, Any]) -> None:
         total_cost = float(episode_data["total_cost"])
         trajectory = self._convert_waypoints(episode_data["trajectory"])
+        absolute_trajectory = self._finalize_trajectory(trajectory)
         self.costs_history.append(total_cost)
         self.costs_dict_history.append(episode_data["costs"])
-        self.log_step(trajectory)
+        self.log_step(absolute_trajectory)
         if total_cost < self.best_cost:
             self.best_cost = total_cost
-            self.best_trajectory = trajectory
+            self.best_trajectory = absolute_trajectory
 
     @staticmethod
     def _convert_waypoints(raw_waypoints: Iterable[Dict[str, Any]]) -> List[Dict[str, float]]:
@@ -143,10 +145,45 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
             for wp in raw_waypoints
         ]
 
+    def _finalize_trajectory(self, waypoints: Iterable[Dict[str, float]]) -> List[Dict[str, float]]:
+        """Return a copy of the waypoints with the terminal target appended if needed."""
+
+        sanitized = [
+            {
+                "x": float(wp["x"]),
+                "y": float(wp["y"]),
+                "z": float(wp["z"]),
+                "v": float(wp["v"]),
+            }
+            for wp in waypoints
+        ]
+
+        if not sanitized:
+            return sanitized
+
+        last = sanitized[-1]
+        target_x, target_y, target_z = self.end_point
+        if not (
+            isclose(last["x"], target_x, abs_tol=1e-6)
+            and isclose(last["y"], target_y, abs_tol=1e-6)
+            and isclose(last["z"], target_z, abs_tol=1e-6)
+        ):
+            sanitized.append(
+                {
+                    "x": float(target_x),
+                    "y": float(target_y),
+                    "z": float(target_z),
+                    "v": float(last["v"]),
+                }
+            )
+
+        return sanitized
+
     def save_results_in_file(self, best_params) -> None:  # type: ignore[override]
+        serialized_best = self._finalize_trajectory(best_params) if best_params else []
         results = {
             "Optimization Algorithm": self.opt_method_name,
-            "Best Parameters Found": best_params,
+            "Best Parameters Found": serialized_best,
             "Best Cost": float(self.best_cost) if self.costs_history else None,
             "Total time (s)": self.end_time,
             "Number of iterations": len(self.costs_history),
