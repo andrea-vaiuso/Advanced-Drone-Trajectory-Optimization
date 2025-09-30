@@ -11,10 +11,10 @@ max_waypoints: 10
 # Euclidean distance (meters) from the target considered successful; shrinking the threshold demands higher precision before stopping.
 termination_distance: 5.0
 action_bounds:
-  # Lower bounds [dx, dy, dz, speed, stop-signal] for each action dimension; tightening any entry restricts exploration.
-  low: [-250.0, -250.0, -250.0, 2.0, 0.0]
-  # Upper bounds [dx, dy, dz, speed, stop-signal]; expanding values allows broader perturbations and faster commanded speeds.
-  high: [250.0, 250.0, 250.0, 20.0, 1.0]
+
+low: [-250.0, -250.0, -250.0, 2.0]
+high: [250.0, 250.0, 250.0, 20.0]
+
 cost_parameters:
   # Weight applied to altitude rule violations; larger values punish flying too high more severely.
   altitude_weight: 0.01

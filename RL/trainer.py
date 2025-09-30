@@ -161,9 +161,9 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
             for wp in raw_waypoints
         ]
 
+
     def _finalize_trajectory(self, waypoints):
         """Ensure the terminal target waypoint is present in the trajectory."""
-
         sanitized = [
             {
                 "x": float(wp["x"]),
@@ -197,6 +197,7 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
 
     def save_results_in_file(self, best_params) -> None:  # type: ignore[override]
         """Persist RL optimisation results to disk using absolute waypoints."""
+
         serialized_best = self._finalize_trajectory(best_params) if best_params else []
         results = {
             "Optimization Algorithm": self.opt_method_name,

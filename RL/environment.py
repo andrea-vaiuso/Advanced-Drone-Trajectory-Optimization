@@ -194,6 +194,7 @@ class DroneTrajectoryEnv(Env):
     def run_zero_waypoint_episode(self):
         """Simulate the straight-line baseline without inserting waypoints."""
 
+
         self.reset()
         default_speed = self._default_terminal_speed()
         return self._finalize_episode(
@@ -219,6 +220,7 @@ class DroneTrajectoryEnv(Env):
 
     def _should_request_stop(self, action: np.ndarray) -> bool:
         """Return ``True`` when the action requests early termination."""
+
         if self.stop_action_index is None:
             return False
         stop_signal = float(action[self.stop_action_index])
@@ -308,6 +310,7 @@ class DroneTrajectoryEnv(Env):
         return self.reference_points[clipped_index]
 
     @staticmethod
+
     def _build_absolute_waypoint(position: np.ndarray, speed: float):
         """Create a waypoint dictionary from position and speed arrays."""
         return {
@@ -357,6 +360,7 @@ class DroneTrajectoryEnv(Env):
             np.array([0.0], dtype=np.float32),
         ]
         return int(np.sum([arr.size for arr in dummy_obs]))
+
 
     def _infer_world_bounds(self):
         """Infer the spatial bounds of the environment from the simulation."""
