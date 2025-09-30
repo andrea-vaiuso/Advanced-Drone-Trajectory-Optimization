@@ -1,10 +1,8 @@
 """Training utilities for SAC-based drone trajectory optimization."""
-from __future__ import annotations
 
 import json
 import os
 from math import isclose
-from typing import Any, Dict, Iterable, List, Optional
 
 import yaml
 from stable_baselines3.common.vec_env import DummyVecEnv
@@ -27,9 +25,10 @@ from main import (
 
 
 class BaseRLTrainer(MetaHeuristicOptimizer):
-    """Base class that bridges the RL workflow with the metaheuristic utilities."""
+    """Bridge Stable-Baselines3 trainers with the metaheuristic utilities."""
 
     def __init__(self, config_file: str, verbose: bool = True) -> None:
+        """Load the RL configuration and instantiate the shared simulation."""
         with open(config_file, "r", encoding="utf-8") as stream:
             rl_cfg = yaml.safe_load(stream)
 
@@ -55,21 +54,23 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
         self.last_time = 0.0
 
         self.cost_parameters = rl_cfg.get("cost_parameters", {})
-        self.best_cost: float = float("inf")
-        self.best_trajectory: List[Dict[str, float]] = []
-        self.model: Optional[SAC] = None
+        self.best_cost = float("inf")
+        self.best_trajectory = []
+        self.model = None
 
     # ------------------------------------------------------------------
     # Abstract API
     # ------------------------------------------------------------------
     
-    def optimize(self) -> List[Dict[str, float]]:  # type: ignore[override]
+    def optimize(self):  # type: ignore[override]
+        """Train the agent and return the best trajectory found."""
         raise NotImplementedError
 
     # ------------------------------------------------------------------
     # Shared helpers
     # ------------------------------------------------------------------
     def _create_simulation(self) -> Simulation:
+        """Instantiate a fresh simulation using the YAML configuration."""
         params = self.simulation_parameters
         init_state = create_initial_state(*self.start_point)
         pid_gains = load_pid_gains(params)
@@ -101,11 +102,12 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
         return simulation
 
     def _build_env_factory(self):
+        """Return a callable that constructs isolated environment instances."""
         max_waypoints = int(self.rl_config.get("max_waypoints", 10))
         termination_distance = float(self.rl_config.get("termination_distance", 5.0))
         action_bounds = self.rl_config.get("action_bounds", {})
 
-        def _factory() -> DroneTrajectoryEnv:
+        def _factory():
             simulation = self._create_simulation()
             cost_evaluator = CostEvaluator(simulation, name=f"{self.opt_method_name}_COST")
             env = DroneTrajectoryEnv(
@@ -123,7 +125,7 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
         return _factory
 
     def _run_zero_waypoint_episode(self, env_factory) -> None:
-        """Execute a baseline episode that keeps the trajectory as a straight line."""
+        """Execute the baseline straight-line episode prior to training."""
 
         env = env_factory()
         try:
@@ -134,7 +136,8 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
         finally:
             env.close()
 
-    def record_episode(self, episode_data: Dict[str, Any]) -> None:
+    def record_episode(self, episode_data) -> None:
+        """Store an episode summary and update best-trajectory bookkeeping."""
         total_cost = float(episode_data["total_cost"])
         trajectory = self._convert_waypoints(episode_data["trajectory"])
         absolute_trajectory = self._finalize_trajectory(trajectory)
@@ -146,7 +149,8 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
             self.best_trajectory = absolute_trajectory
 
     @staticmethod
-    def _convert_waypoints(raw_waypoints: Iterable[Dict[str, Any]]) -> List[Dict[str, float]]:
+    def _convert_waypoints(raw_waypoints):
+        """Cast waypoint dictionaries to floats for downstream consumers."""
         return [
             {
                 "x": float(wp["x"]),
@@ -157,9 +161,9 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
             for wp in raw_waypoints
         ]
 
-    def _finalize_trajectory(self, waypoints: Iterable[Dict[str, float]]) -> List[Dict[str, float]]:
-        """Return a copy of the waypoints with the terminal target appended if needed."""
 
+    def _finalize_trajectory(self, waypoints):
+        """Ensure the terminal target waypoint is present in the trajectory."""
         sanitized = [
             {
                 "x": float(wp["x"]),
@@ -192,6 +196,8 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
         return sanitized
 
     def save_results_in_file(self, best_params) -> None:  # type: ignore[override]
+        """Persist RL optimisation results to disk using absolute waypoints."""
+
         serialized_best = self._finalize_trajectory(best_params) if best_params else []
         results = {
             "Optimization Algorithm": self.opt_method_name,
@@ -211,7 +217,8 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
 class SACTrajectoryTrainer(BaseRLTrainer):
     """Trainer that leverages Stable-Baselines3 SAC."""
 
-    def optimize(self) -> List[Dict[str, float]]:  # type: ignore[override]
+    def optimize(self):  # type: ignore[override]
+        """Train the SAC agent and return the best recorded trajectory."""
         env_factory = self._build_env_factory()
         self._run_zero_waypoint_episode(env_factory)
         train_env = DummyVecEnv([env_factory])
@@ -241,6 +248,7 @@ class SACTrajectoryTrainer(BaseRLTrainer):
         return self.best_trajectory
 
     def _evaluate_policy(self, model: SAC, env_factory, episodes: int) -> None:
+        """Evaluate the deterministic policy for the requested number of episodes."""
         for _ in range(episodes):
             env = env_factory()
             obs, _ = env.reset()
@@ -254,9 +262,10 @@ class SACTrajectoryTrainer(BaseRLTrainer):
                 self.record_episode(episode_data)
             env.close()
 
-    def _build_sac_kwargs(self, env: DummyVecEnv) -> Dict[str, Any]:
+    def _build_sac_kwargs(self, env: DummyVecEnv):
+        """Translate the YAML configuration into SAC constructor arguments."""
         policy = self.rl_config.get("policy", "MlpPolicy")
-        kwargs: Dict[str, Any] = {
+        kwargs = {
             "policy": policy,
             "env": env,
             "learning_rate": self.rl_config.get("learning_rate", 3e-4),

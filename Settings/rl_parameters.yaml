@@ -1,10 +1,14 @@
-# Reinforcement learning configuration for SAC
+# Name of the reinforcement learning algorithm used for waypoint perturbations; switching enables alternative SB3 agents.
 algorithm_name: "SAC"
+# When true the environment starts each episode from the deterministic baseline observation; disabling adds stochasticity to resets.
 set_initial_obs: true
+# Path to the simulation parameter file describing the drone, world and mission setup used by the RL environment.
 simulation_parameters_file: "Settings/simulation_parameters.yaml"
 
 # Environment settings
+# Maximum number of intermediate waypoints the agent may propose; lower values reduce planning flexibility but shorten episodes.
 max_waypoints: 10
+# Euclidean distance (meters) from the target considered successful; shrinking the threshold demands higher precision before stopping.
 termination_distance: 5.0
 action_bounds:
 
@@ -12,25 +16,45 @@ low: [-250.0, -250.0, -250.0, 2.0]
 high: [250.0, 250.0, 250.0, 20.0]
 
 cost_parameters:
+  # Weight applied to altitude rule violations; larger values punish flying too high more severely.
   altitude_weight: 0.01
+  # Weight applied to power consumption; increasing prioritises energy-efficient trajectories during learning.
   power_weight: 0.0001
+  # Weight applied to acoustic annoyance penalties; higher values force quieter, potentially longer, flight paths.
   noise_weight: 15.0
+  # Bonus granted for completing the mission; increasing pushes the agent to finish the route rather than loitering.
   completion_weight: 1000.0
+  # Flag that determines whether each call stores intermediate cost metrics for later inspection.
   save_costs_in_history: false
 
 # SAC hyperparameters
-total_timesteps: 2000 # Total number of timesteps for training
-learning_rate: 0.0003 # Learning rate for the optimizer
-buffer_size: 50000 # Size of the replay buffer
-batch_size: 128 # Batch size for sampling from the replay buffer
-gamma: 0.99 # Discount factor for future rewards
-tau: 0.005 # Soft update coefficient for target networks
-train_freq: 1 # Frequency of training steps
-gradient_steps: 1 # Number of gradient steps per training step
-ent_coef: "auto" # Entropy coefficient
-target_update_interval: 1 # Frequency of target network updates
-learning_starts: 1000 # Number of steps before training starts
-policy: "MlpPolicy" # Policy architecture
-log_interval: 1 # Logging interval
-device: "auto" # Device to use for training ("cpu", "cuda", or "auto")
-evaluation_episodes: 1 # Number of episodes for evaluation
+# Total number of environment steps collected during training; more steps improve convergence at the cost of runtime.
+total_timesteps: 2000
+# Optimizer step size; raising the learning rate speeds up updates but risks instability, lowering makes training safer yet slower.
+learning_rate: 0.0003
+# Maximum number of transitions kept in the replay buffer; larger buffers provide more diverse batches but use extra memory.
+buffer_size: 50000
+# Number of samples drawn per gradient update; larger batches stabilise training but require more memory per step.
+batch_size: 128
+# Discount factor for future rewards; values closer to 1 favour long-term planning while smaller values emphasise immediate costs.
+gamma: 0.99
+# Polyak averaging coefficient for target network updates; lowering tau produces slower, more stable target updates.
+tau: 0.005
+# Frequency (in environment steps) of gradient updates; increasing trains more often but raises compute cost.
+train_freq: 1
+# Number of gradient steps performed at each training call; higher counts improve data efficiency but slow wall-clock time.
+gradient_steps: 1
+# Entropy regularisation coefficient; setting to "auto" lets SAC tune exploration, while manual values fix exploration pressure.
+ent_coef: "auto"
+# Interval (in gradient steps) between target network synchronisations; larger values reduce updates but can slow convergence.
+target_update_interval: 1
+# Number of collected steps before the agent starts training; increasing allows a larger initial buffer for more stable learning.
+learning_starts: 1000
+# Policy architecture identifier used by Stable-Baselines3; switching to custom networks can better match state dimensionality.
+policy: "MlpPolicy"
+# Logging frequency in training steps; higher numbers slow console spam while lower values aid debugging by reporting often.
+log_interval: 1
+# Device used for training ("cpu", "cuda" or "auto"); selecting GPU accelerates training when available.
+device: "auto"
+# Number of deterministic evaluation rollouts performed after training; increasing produces smoother validation statistics.
+evaluation_episodes: 1

@@ -1,9 +1,7 @@
 """Gymnasium environment for drone trajectory optimization with SAC."""
-from __future__ import annotations
 
 import os
 from copy import deepcopy
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from gymnasium import Env, spaces
@@ -13,9 +11,9 @@ from Optimizations.optimizer import MetaHeuristicOptimizer
 
 
 class CostEvaluator(MetaHeuristicOptimizer):
-    """Lightweight wrapper to reuse the metaheuristic cost function in RL."""
+    """Expose the metaheuristic cost evaluator without running an optimiser."""
 
-    def __init__(self, simulation_object: Simulation, name: str = "RL_COST") -> None:
+    def __init__(self, simulation_object, name: str = "RL_COST") -> None:
         super().__init__(
             simulation_object=simulation_object,
             opt_method_name=name,
@@ -32,21 +30,27 @@ class CostEvaluator(MetaHeuristicOptimizer):
 
 
 class DroneTrajectoryEnv(Env):
-    """Environment where the agent sequentially designs intermediate waypoints."""
+    """Gymnasium environment that lets an agent author waypoint perturbations.
+
+    The environment interprets actions as offsets around reference points
+    placed on the straight segment between the start and target locations.  A
+    final action component optionally terminates waypoint generation early so
+    the agent can choose between trajectories with different waypoint counts.
+    """
 
     metadata = {"render_modes": []}
 
     def __init__(
         self,
-        simulation: Simulation,
-        cost_evaluator: CostEvaluator,
-        start_point: Tuple[float, float, float],
-        final_target: Tuple[float, float, float],
-        max_waypoints: int,
-        action_bounds: Dict[str, List[float]],
-        termination_distance: float,
-        cost_parameters: Optional[Dict[str, float]] = None,
-    ) -> None:
+        simulation,
+        cost_evaluator,
+        start_point,
+        final_target,
+        max_waypoints,
+        action_bounds,
+        termination_distance,
+        cost_parameters=None,
+    ):
         super().__init__()
         self.simulation = simulation
         self.cost_evaluator = cost_evaluator
@@ -80,15 +84,6 @@ class DroneTrajectoryEnv(Env):
         self.stop_action_index = 4 if self.low_action.size > 4 else None
         self.stop_threshold = 0.5
 
-
-        self.world_min_bounds, self.world_max_bounds = self._infer_world_bounds()
-        (
-            self.low_action,
-            self.high_action,
-            self.per_waypoint_low,
-            self.per_waypoint_high,
-        ) = self._initialize_action_bounds(raw_low, raw_high)
-
         self.action_space = spaces.Box(low=self.low_action, high=self.high_action, dtype=np.float32)
 
         # Reference internal waypoints on the direct A→B segment.
@@ -106,15 +101,16 @@ class DroneTrajectoryEnv(Env):
         obs_high = np.full(state_dim, np.inf, dtype=np.float32)
         self.observation_space = spaces.Box(low=obs_low, high=obs_high, dtype=np.float32)
 
-        self.current_waypoints: List[Dict[str, float]] = []
+        self.current_waypoints = []
         self.current_step = 0
         self._needs_reset = True
-        self.last_episode_data: Optional[Dict] = None
+        self.last_episode_data = None
 
     # ------------------------------------------------------------------
     # Gymnasium API
     # ------------------------------------------------------------------
-    def reset(self, *, seed: Optional[int] = None, options: Optional[Dict] = None):  # type: ignore[override]
+    def reset(self, *, seed=None, options=None):  # type: ignore[override]
+        """Reset the simulator state and return the initial observation."""
         super().reset(seed=seed)
         del options  # unused
 
@@ -132,12 +128,12 @@ class DroneTrajectoryEnv(Env):
         self.simulation.waypoints = []
 
         observation = self._get_observation()
-        info: Dict = {}
+        info = {}
         return observation, info
 
     def step(self, action: np.ndarray):  # type: ignore[override]
+        """Apply an action and advance the environment by one waypoint step."""
         action = np.clip(action, self.low_action, self.high_action).astype(float)
-        action = self._clip_action_for_index(action, self.current_step)
 
         if self._should_request_stop(action):
             return self._finalize_episode(
@@ -146,7 +142,6 @@ class DroneTrajectoryEnv(Env):
                 stopped_by_agent=True,
                 last_waypoint=None,
             )
-
 
         waypoint = self._build_waypoint(action, self.current_step)
         self.current_waypoints.append(waypoint)
@@ -169,7 +164,7 @@ class DroneTrajectoryEnv(Env):
 
         terminated = False
         truncated = False
-        info: Dict = {
+        info = {
             'costs': costs,
             'waypoint': waypoint,
             'trajectory': deepcopy(self.current_waypoints),
@@ -190,7 +185,6 @@ class DroneTrajectoryEnv(Env):
                 cached_costs=costs if reached_goal else None,
             )
 
-
         observation = self._get_observation()
         return observation, reward, terminated, truncated, info
 
@@ -198,7 +192,8 @@ class DroneTrajectoryEnv(Env):
     # Helper functions
     # ------------------------------------------------------------------
     def run_zero_waypoint_episode(self):
-        """Simulate an episode that travels directly from start to target."""
+        """Simulate the straight-line baseline without inserting waypoints."""
+
 
         self.reset()
         default_speed = self._default_terminal_speed()
@@ -209,20 +204,23 @@ class DroneTrajectoryEnv(Env):
             last_waypoint=None,
         )
 
-    def _calculate_costs(self) -> Dict[str, float]:
+    def _calculate_costs(self):
+        """Return the current cost metrics computed by the shared evaluator."""
         kwargs = dict(self.cost_parameters)
         kwargs.setdefault('save_costs_in_history', False)
         result = self.cost_evaluator.calculate_costs(**kwargs)
         return {k: float(v) for k, v in result.items()}
 
-    def _build_waypoint(self, action: np.ndarray, index: int) -> Dict[str, float]:
+    def _build_waypoint(self, action: np.ndarray, index: int):
+        """Convert an action into an absolute waypoint for the given index."""
         reference = self._get_reference_point(index)
         offset = action[:3]
         position = reference + offset
-        position = np.clip(position, self.world_min_bounds, self.world_max_bounds)
         return self._build_absolute_waypoint(position, float(action[self.speed_index]))
 
     def _should_request_stop(self, action: np.ndarray) -> bool:
+        """Return ``True`` when the action requests early termination."""
+
         if self.stop_action_index is None:
             return False
         stop_signal = float(action[self.stop_action_index])
@@ -230,12 +228,13 @@ class DroneTrajectoryEnv(Env):
 
     def _finalize_episode(
         self,
-        reached_goal: bool,
-        forced_speed: float,
-        stopped_by_agent: bool,
-        last_waypoint: Optional[Dict[str, float]],
-        cached_costs: Optional[Dict[str, float]] = None,
+        reached_goal,
+        forced_speed,
+        stopped_by_agent,
+        last_waypoint,
+        cached_costs=None,
     ):
+        """Assemble the terminal transition and associated bookkeeping."""
         if reached_goal:
             final_wp = self._ensure_final_target_present(
                 speed=(last_waypoint['v'] if last_waypoint else forced_speed),
@@ -248,7 +247,7 @@ class DroneTrajectoryEnv(Env):
             costs = self._calculate_costs()
             reward = -float(costs['total_cost'])
 
-        info: Dict = {
+        info = {
             'costs': costs,
             'waypoint': last_waypoint if last_waypoint is not None else final_wp,
             'trajectory': deepcopy(self.current_waypoints),
@@ -267,7 +266,8 @@ class DroneTrajectoryEnv(Env):
         truncated = False
         return observation, reward, terminated, truncated, info
 
-    def _ensure_final_target_present(self, speed: Optional[float], run_simulation: bool) -> Dict[str, float]:
+    def _ensure_final_target_present(self, speed, run_simulation):
+        """Append the terminal waypoint when missing and optionally simulate it."""
         last_wp = self.current_waypoints[-1] if self.current_waypoints else None
         if last_wp is not None:
             last_pos = np.array([last_wp['x'], last_wp['y'], last_wp['z']], dtype=float)
@@ -295,20 +295,24 @@ class DroneTrajectoryEnv(Env):
         self.current_waypoints.append(final_wp)
         return final_wp
 
-    def _default_terminal_speed(self) -> float:
+    def _default_terminal_speed(self):
+        """Return the midpoint between the minimum and maximum speed bounds."""
         low = float(self.low_action[self.speed_index])
         high = float(self.high_action[self.speed_index])
         midpoint = 0.5 * (low + high)
         return float(np.clip(midpoint, low, high))
 
-    def _get_reference_point(self, index: int) -> np.ndarray:
+    def _get_reference_point(self, index):
+        """Return the neutral waypoint corresponding to the given index."""
         if self.reference_points.size == 0:
             return self.final_target.astype(float)
         clipped_index = min(max(index, 0), len(self.reference_points) - 1)
         return self.reference_points[clipped_index]
 
     @staticmethod
-    def _build_absolute_waypoint(position: np.ndarray, speed: float) -> Dict[str, float]:
+
+    def _build_absolute_waypoint(position: np.ndarray, speed: float):
+        """Create a waypoint dictionary from position and speed arrays."""
         return {
             'x': float(position[0]),
             'y': float(position[1]),
@@ -316,7 +320,8 @@ class DroneTrajectoryEnv(Env):
             'v': float(speed),
         }
 
-    def _get_observation(self) -> np.ndarray:
+    def _get_observation(self):
+        """Assemble the observation vector from the drone telemetry."""
         state = self.simulation.drone.state
         obs_components = [
             np.asarray(state.get('pos', np.zeros(3)), dtype=np.float32),
@@ -334,7 +339,8 @@ class DroneTrajectoryEnv(Env):
         obs_components.append(steps_left)
         return np.concatenate(obs_components, dtype=np.float32)
 
-    def _compute_state_dimension(self) -> int:
+    def _compute_state_dimension(self):
+        """Return the size of the flattened observation vector."""
         dummy_state = {
             'pos': np.zeros(3),
             'vel': np.zeros(3),
@@ -355,10 +361,12 @@ class DroneTrajectoryEnv(Env):
         ]
         return int(np.sum([arr.size for arr in dummy_obs]))
 
-    def _infer_world_bounds(self) -> Tuple[np.ndarray, np.ndarray]:
+
+    def _infer_world_bounds(self):
+        """Infer the spatial bounds of the environment from the simulation."""
         world = getattr(self.simulation, "world", None)
         world_min = np.zeros(3, dtype=float)
-        world_max_value: Optional[float] = None
+        world_max_value = None
         if world is not None:
             max_world_size = getattr(world, "max_world_size", None)
             if max_world_size is not None:
@@ -375,9 +383,8 @@ class DroneTrajectoryEnv(Env):
         world_max = np.full(3, world_max_value, dtype=float)
         return world_min, world_max
 
-    def _initialize_action_bounds(
-        self, raw_low: np.ndarray, raw_high: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def _initialize_action_bounds(self, raw_low: np.ndarray, raw_high: np.ndarray):
+        """Compute global and per-waypoint action bounds for the SAC policy."""
         if self.max_waypoints <= 0:
             low_action = raw_low.astype(np.float32)
             high_action = raw_high.astype(np.float32)
@@ -418,17 +425,15 @@ class DroneTrajectoryEnv(Env):
             per_waypoint_low = per_waypoint_low_core
             per_waypoint_high = per_waypoint_high_core
 
-
         if np.any(per_waypoint_low > per_waypoint_high):
             raise ValueError("Inconsistent action bounds: some waypoint intervals are invalid.")
 
-        low_action = per_waypoint_low.min(axis=0).astype(np.float32)
-        high_action = per_waypoint_high.max(axis=0).astype(np.float32)
+        low_action = np.max(per_waypoint_low, axis=0).astype(np.float32)
+        high_action = np.min(per_waypoint_high, axis=0).astype(np.float32)
+
+        if np.any(low_action > high_action):
+            raise ValueError(
+                "Unable to derive consistent global action bounds from per-waypoint limits."
+            )
 
         return low_action, high_action, per_waypoint_low, per_waypoint_high
-
-    def _clip_action_for_index(self, action: np.ndarray, index: int) -> np.ndarray:
-        if index < 0 or index >= len(self.per_waypoint_low):
-            return action
-        clipped = np.clip(action, self.per_waypoint_low[index], self.per_waypoint_high[index])
-        return clipped

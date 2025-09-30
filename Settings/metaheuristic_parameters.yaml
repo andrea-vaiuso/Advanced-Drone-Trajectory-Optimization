@@ -1,0 +1,32 @@
+# Shared hyperparameters for the metaheuristic waypoint optimizers.
+shared:
+  # Number of internal waypoints optimized between the start and target locations.
+  n_points: 5
+  # Maximum absolute displacement (meters) allowed when perturbing the neutral waypoint positions on the A→B line.
+  max_perturbation_offset: 250.0
+  # Upper speed limit (m/s) assigned to intermediate waypoints; lowering it enforces slower but safer flight segments.
+  max_velocity: 20.0
+
+# Grey Wolf Optimizer specific settings.
+gwo:
+  # Total number of optimization generations; increasing improves convergence but raises simulation cost.
+  n_generations: 100
+  # Size of the wolf pack exploring the search space; larger packs diversify search at the expense of runtime.
+  pack_size: 30
+  # Random seed used when sampling the initial wolves to reproduce identical runs when desired.
+  random_seed: 42
+
+# Particle Swarm Optimization specific settings.
+pso:
+  # Total number of optimization generations; more generations allow longer refinement of the swarm trajectories.
+  n_generations: 100
+  # Number of swarm particles; a larger swarm covers the space better but increases per-generation simulations.
+  swarm_size: 30
+  # Inertia coefficient weighting the previous velocity; higher values preserve momentum, lower values encourage exploitation.
+  inertia: 0.5
+  # Cognitive coefficient guiding particles back toward their personal best; raising it emphasises individual exploration.
+  cognitive_coeff: 1.5
+  # Social coefficient pulling particles toward the global best; raising it accelerates convergence but risks premature trapping.
+  social_coeff: 1.5
+  # Random seed controlling the stochastic sampling of the PSO updates for reproducible runs.
+  random_seed: 42
