@@ -2,13 +2,12 @@
 
 from stable_baselines3.common.callbacks import BaseCallback
 
-from RL.trainer import BaseRLTrainer
 
 
 class RLEpisodeLogger(BaseCallback):
     """Forward environment episode summaries to the :class:`BaseRLTrainer`."""
 
-    def __init__(self, trainer: BaseRLTrainer, verbose: int = 0) -> None:
+    def __init__(self, trainer, verbose: int = 0) -> None:
         super().__init__(verbose)
         self.trainer = trainer
 

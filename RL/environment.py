@@ -42,14 +42,14 @@ class DroneTrajectoryEnv(Env):
 
     def __init__(
         self,
-        simulation,
-        cost_evaluator,
-        start_point,
-        final_target,
-        max_waypoints,
-        action_bounds,
-        termination_distance,
-        cost_parameters=None,
+        simulation: Simulation,
+        cost_evaluator: CostEvaluator,
+        start_point: np.ndarray,
+        final_target: np.ndarray,
+        max_waypoints: int,
+        action_bounds: dict,
+        termination_distance: float,
+        cost_parameters: dict = None,
     ):
         super().__init__()
         self.simulation = simulation
@@ -60,8 +60,8 @@ class DroneTrajectoryEnv(Env):
         self.termination_distance = float(termination_distance)
         self.cost_parameters = cost_parameters or {}
 
-        raw_low = np.array(action_bounds.get("low", [-100.0, -100.0, -100.0, 0.0, 0.0]), dtype=float)
-        raw_high = np.array(action_bounds.get("high", [100.0, 100.0, 100.0, 20.0, 1.0]), dtype=float)
+        raw_low = np.array(action_bounds.get("low", [-250.0, -250.0, -250.0, 2.0]), dtype=float)
+        raw_high = np.array(action_bounds.get("high", [250.0, 250.0, 250.0, 20.0]), dtype=float)
 
         if raw_low.shape not in {(4,), (5,)} or raw_high.shape != raw_low.shape:
             raise ValueError(
@@ -132,7 +132,17 @@ class DroneTrajectoryEnv(Env):
         return observation, info
 
     def step(self, action: np.ndarray):  # type: ignore[override]
-        """Apply an action and advance the environment by one waypoint step."""
+        """Apply an action and advance the environment by one waypoint step.
+
+        Args:
+            action: A numpy array of shape (4,) or (5,) representing the action to be taken.
+        Returns:
+            observation: The next observation of the environment.
+            reward: The reward obtained from taking the action.
+            terminated: A boolean indicating if the episode has ended.
+            truncated: A boolean indicating if the episode was truncated.
+            info: A dictionary containing additional information about the step.
+        """
         action = np.clip(action, self.low_action, self.high_action).astype(float)
 
         if self._should_request_stop(action):
@@ -193,8 +203,6 @@ class DroneTrajectoryEnv(Env):
     # ------------------------------------------------------------------
     def run_zero_waypoint_episode(self):
         """Simulate the straight-line baseline without inserting waypoints."""
-
-
         self.reset()
         default_speed = self._default_terminal_speed()
         return self._finalize_episode(
@@ -310,7 +318,6 @@ class DroneTrajectoryEnv(Env):
         return self.reference_points[clipped_index]
 
     @staticmethod
-
     def _build_absolute_waypoint(position: np.ndarray, speed: float):
         """Create a waypoint dictionary from position and speed arrays."""
         return {

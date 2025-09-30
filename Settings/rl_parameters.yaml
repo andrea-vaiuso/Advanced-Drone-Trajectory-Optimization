@@ -29,32 +29,46 @@ cost_parameters:
 
 # SAC hyperparameters
 # Total number of environment steps collected during training; more steps improve convergence at the cost of runtime.
-total_timesteps: 2000
+total_timesteps: 3000
+
 # Optimizer step size; raising the learning rate speeds up updates but risks instability, lowering makes training safer yet slower.
 learning_rate: 0.0003
+
 # Maximum number of transitions kept in the replay buffer; larger buffers provide more diverse batches but use extra memory.
 buffer_size: 50000
+
 # Number of samples drawn per gradient update; larger batches stabilise training but require more memory per step.
 batch_size: 128
+
 # Discount factor for future rewards; values closer to 1 favour long-term planning while smaller values emphasise immediate costs.
 gamma: 0.99
+
 # Polyak averaging coefficient for target network updates; lowering tau produces slower, more stable target updates.
 tau: 0.005
+
 # Frequency (in environment steps) of gradient updates; increasing trains more often but raises compute cost.
 train_freq: 1
+
 # Number of gradient steps performed at each training call; higher counts improve data efficiency but slow wall-clock time.
 gradient_steps: 1
+
 # Entropy regularisation coefficient; setting to "auto" lets SAC tune exploration, while manual values fix exploration pressure.
 ent_coef: "auto"
+
 # Interval (in gradient steps) between target network synchronisations; larger values reduce updates but can slow convergence.
 target_update_interval: 1
+
 # Number of collected steps before the agent starts training; increasing allows a larger initial buffer for more stable learning.
 learning_starts: 1000
+
 # Policy architecture identifier used by Stable-Baselines3; switching to custom networks can better match state dimensionality.
 policy: "MlpPolicy"
+
 # Logging frequency in training steps; higher numbers slow console spam while lower values aid debugging by reporting often.
 log_interval: 1
+
 # Device used for training ("cpu", "cuda" or "auto"); selecting GPU accelerates training when available.
 device: "auto"
+
 # Number of deterministic evaluation rollouts performed after training; increasing produces smoother validation statistics.
 evaluation_episodes: 1
