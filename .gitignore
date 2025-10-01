@@ -1,5 +1,7 @@
 Worlds/*.pkl
 *.pyc
-*.pyc
-*.pyc
-*.pyc
+__pycache__/*
+RL/SAC/*
+Optimizations/__pycache__/*
+RL/__pycache__/*
+Journal\~$Journal.pptx
