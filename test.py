@@ -4,8 +4,46 @@ from Worlds.World import World
 import Drone.Simulation
 from matplotlib import pyplot as plt
 from Optimizations.PSO_optimizer import PSOOptimizer
+from Optimizations.optimizer import MetaHeuristicOptimizer as CostWrapper
 
-waypoints_optimized_gwo = [{"x": 140.40213377112582, "y": 183.7275071814119, "z": 96.5041475402006, "v": 12.483198287987207}, {"x": 311.8147622870915, "y": 88.24761446888775, "z": 135.97085753787363, "v": 14.89378678892961}, {"x": 735.0, "y": 278.9333712238131, "z": 255.0, "v": 17.10721740613379}, {"x": 890.0, "y": 648.9370405977522, "z": 251.6355139697522, "v": 19.343310829474486}, {"x": 952.8509545738897, "y": 802.7353159664835, "z": 172.72840820090582, "v": 11.538788429152518}, {"x": 950.0, "y": 950.0, "z": 10.0, "v": 5.0}]
+waypoints_optimized_gwo = [
+        {
+            "x": 202.4473762898855,
+            "y": 241.18585339735836,
+            "z": 133.9965963325619,
+            "v": 5.000508959435863
+        },
+        {
+            "x": 370.53592444302507,
+            "y": 391.939053599772,
+            "z": 190.6480506456245,
+            "v": 14.126968636724628
+        },
+        {
+            "x": 464.68914665275946,
+            "y": 438.20038895203527,
+            "z": 161.42151740995882,
+            "v": 13.08638316190654
+        },
+        {
+            "x": 723.1410408519813,
+            "y": 520.6600754915677,
+            "z": 184.71164572001788,
+            "v": 20.0
+        },
+        {
+            "x": 984.2136899207717,
+            "y": 721.1086667123632,
+            "z": 138.6151991413981,
+            "v": 15.29579473875952
+        },
+        {
+            "x": 950.0,
+            "y": 950.0,
+            "z": 10.0,
+            "v": 5.0
+        }
+    ]
 waypoints_optimized_sac = [
         {
             "x": 212.3166032270952,
@@ -74,6 +112,31 @@ waypoints_optimized_sac = [
             "v": 20.0
         }
     ]
+waypoints_manual = [{
+    "x": 250.0,
+    "y": 250.0,
+    "z": 100.0,
+    "v": 10.0
+}, {
+    "x": 500.0,
+    "y": 500.0,
+    "z": 150.0,
+    "v": 15.0
+}, {
+    "x": 950.0,
+    "y": 950.0,
+    "z": 10.0,
+    "v": 20.0
+    }
+]
+no_waypoints = [
+    {
+        "x": 950.0,
+        "y": 950.0,
+        "z": 10.0,
+        "v": 20.0
+    }
+]
 parameters = load_parameters("Settings/simulation_parameters.yaml")
 
 A = parameters['start_point']
@@ -92,7 +155,7 @@ noise_model = load_dnn_noise_model(parameters)
 sim = Simulation(
     drone,
     world,
-    waypoints_optimized_sac, 
+    waypoints_optimized_gwo, 
     dt=float(parameters['dt']),
     max_simulation_time=float(parameters['simulation_time']),
     frame_skip=int(parameters['frame_skip']),
@@ -104,7 +167,11 @@ sim = Simulation(
     noise_annoyance_radius=9,
 )
 
-sim.startSimulation(stop_at_target=True, use_static_target=False, verbose=True)
+cw = CostWrapper(sim, "")
+
+cw.simulation_object.startSimulation(stop_at_target=True, use_static_target=False, verbose=True)
+print(f"Costs: {cw.calculate_costs()}")
+max_world_size = cw.simulation_object.world.max_world_size
 show2DWorld(
-    world, sim.positions, A, B, waypoints_optimized_sac)
-plot3DAnimation(sim, window=(sim.world.max_world_size,sim.world.max_world_size,sim.world.max_world_size))
+    world, cw.simulation_object.positions, A, B, waypoints_optimized_gwo)
+plot3DAnimation(cw.simulation_object, window=(max_world_size,max_world_size,max_world_size))
