@@ -252,7 +252,7 @@ class DroneTrajectoryEnv(Env):
         """Return the current cost metrics computed by the shared evaluator."""
         kwargs = dict(self.cost_parameters)
         kwargs.setdefault('save_costs_in_history', False)
-        result = self.cost_evaluator.calculate_costs(**kwargs)
+        result = self.cost_evaluator.calculate_costs(**kwargs, alternative_simulation=self.simulation)
         return {k: float(v) for k, v in result.items()}
 
     def _build_waypoint(self, action: np.ndarray, index: int):

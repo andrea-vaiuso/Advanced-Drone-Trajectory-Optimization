@@ -167,6 +167,7 @@ class MetaHeuristicOptimizer:
         print_costs: bool = False,
         weight_penalties: bool = True,
         save_costs_in_history: bool = True,
+        alternative_simulation: Simulation = None,
     ):
         """Aggregate the simulation penalties into a scalar cost.
 
@@ -179,12 +180,12 @@ class MetaHeuristicOptimizer:
             weight_penalties: Toggle for enforcing the additional penalties.
             save_costs_in_history: When ``True`` append the result to
                 :attr:`costs_history` for later analysis.
+            alternative_simulation: When provided, uses this simulation instance and make the method stateless (useful in RL environments).
 
         Returns:
             Dictionary with each cost component and the aggregated ``total_cost``.
         """
-
-        sim = self.simulation_object
+        sim = alternative_simulation if alternative_simulation is not None else self.simulation_object
         noise_penalty_history = np.array(sim.noise_penalty_history)
         final_time = sim.navigation_time if sim.navigation_time is not None else sim.max_simulation_time
 
