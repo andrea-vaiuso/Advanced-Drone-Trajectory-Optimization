@@ -126,10 +126,20 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
 
     def _run_zero_waypoint_episode(self, env_factory) -> None:
         """Execute the baseline straight-line episode prior to training."""
-
         env = env_factory()
         try:
             _, _, _, _, info = env.run_zero_waypoint_episode()
+            episode_data = info.get("episode_data") if info else None
+            if episode_data:
+                self.record_episode(episode_data)
+        finally:
+            env.close()
+    
+    def _run_specific_waypoint_episode(self, env_factory, waypoints) -> None:
+        """Execute an episode with the provided waypoints."""
+        env = env_factory()
+        try:
+            _, _, _, _, info = env.run_specific_waypoints_episode(waypoints)
             episode_data = info.get("episode_data") if info else None
             if episode_data:
                 self.record_episode(episode_data)
@@ -216,11 +226,20 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
 
 class SACTrajectoryTrainer(BaseRLTrainer):
     """Trainer that leverages Stable-Baselines3 SAC."""
+    def __init__(self, config_file, verbose = True, specific_waypoints = None, run_zero_waypoint_episode = True) -> None:
+        super().__init__(config_file, verbose)
+        self.specific_waypoints = specific_waypoints
+        self.run_zero_waypoint_episode = run_zero_waypoint_episode
+
 
     def optimize(self):  # type: ignore[override]
         """Train the SAC agent and return the best recorded trajectory."""
         env_factory = self._build_env_factory()
-        self._run_zero_waypoint_episode(env_factory)
+        if self.run_zero_waypoint_episode:
+            self._run_zero_waypoint_episode(env_factory)
+        if self.specific_waypoints is not None:
+            self._run_specific_waypoint_episode(env_factory, self.specific_waypoints)
+
         train_env = DummyVecEnv([env_factory])
 
         sac_kwargs = self._build_sac_kwargs(train_env)

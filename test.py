@@ -113,21 +113,26 @@ waypoints_optimized_sac = [
         }
     ]
 waypoints_manual = [{
-    "x": 250.0,
-    "y": 250.0,
-    "z": 100.0,
-    "v": 10.0
+    "x": 450.0,
+    "y": 150.0,
+    "z": 200.0,
+    "v": 20.0
 }, {
-    "x": 500.0,
-    "y": 500.0,
-    "z": 150.0,
+    "x": 800.0,
+    "y": 430.0,
+    "z": 200.0,
     "v": 15.0
+}, {
+    "x": 930.0,
+    "y": 440.0,
+    "z": 200.0,
+    "v": 20.0
 }, {
     "x": 950.0,
     "y": 950.0,
     "z": 10.0,
     "v": 20.0
-    }
+}
 ]
 no_waypoints = [
     {
@@ -145,6 +150,9 @@ B = parameters['end_point']
 init_state = create_initial_state(A[0], A[1], A[2])
 
 
+waypoints_selected = waypoints_optimized_sac
+
+
 thrust_max = get_max_thrust_from_rotor_model(parameters)
 pid_gains = load_pid_gains(parameters)
 quad_controller = create_quadcopter_controller(init_state, pid_gains, thrust_max, parameters)
@@ -155,7 +163,7 @@ noise_model = load_dnn_noise_model(parameters)
 sim = Simulation(
     drone,
     world,
-    waypoints_optimized_gwo, 
+    waypoints_selected,
     dt=float(parameters['dt']),
     max_simulation_time=float(parameters['simulation_time']),
     frame_skip=int(parameters['frame_skip']),
@@ -173,5 +181,7 @@ cw.simulation_object.startSimulation(stop_at_target=True, use_static_target=Fals
 print(f"Costs: {cw.calculate_costs()}")
 max_world_size = cw.simulation_object.world.max_world_size
 show2DWorld(
-    world, cw.simulation_object.positions, A, B, waypoints_optimized_gwo)
+    world, cw.simulation_object.positions, A, B, waypoints_selected)
 plot3DAnimation(cw.simulation_object, window=(max_world_size,max_world_size,max_world_size))
+
+ 

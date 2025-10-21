@@ -33,7 +33,7 @@ class World:
         3: {
             "id": 3,
             "name": "Open Field",
-            "min_altitude": 0, 
+            "min_altitude": 5, 
             "max_altitude": 1000, 
             "noise_penalty": 0,
             "color": "green",

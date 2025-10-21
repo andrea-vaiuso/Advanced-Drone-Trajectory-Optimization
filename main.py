@@ -42,7 +42,11 @@ def create_training_waypoints() -> list:
         {'x': 10.0, 'y': 10.0, 'z': 1.0, 'v': 5}    # Final target: near origin at low altitude
     ]
 
-def create_random_waypoints(n: int = 10, x_range: tuple = (0, 100), y_range: tuple = (0, 100), z_range: tuple = (0, 100), v: float = 5) -> list:
+def create_random_waypoints(n: int = 10, 
+                            x_range: tuple = (0, 100), 
+                            y_range: tuple = (0, 100), 
+                            z_range: tuple = (0, 100), 
+                            v: float = 5) -> list:
     """
     Create a list of random waypoints for the drone.
     
@@ -62,6 +66,7 @@ def create_random_waypoints(n: int = 10, x_range: tuple = (0, 100), y_range: tup
          'z': np.random.uniform(*z_range), 
          'v': v} for _ in range(n)
     ]
+
 
 def create_initial_state(x: float = 0, y: float = 0, z: float = 0) -> dict:
     """

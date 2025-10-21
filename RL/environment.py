@@ -211,6 +211,42 @@ class DroneTrajectoryEnv(Env):
             stopped_by_agent=True,
             last_waypoint=None,
         )
+    
+    def run_specific_waypoints_episode(self, waypoints):
+        """Simulate a fixed set of waypoints without agent intervention."""
+        self.reset()
+        for waypoint in waypoints:
+            self.current_waypoints.append(waypoint)
+            self.simulation.waypoints = [deepcopy(waypoint)]
+            self.simulation.current_seg_idx = 0
+
+            reset_state = self._needs_reset
+            self._needs_reset = False
+
+            self.simulation.startSimulation(
+                stop_at_target=True,
+                verbose=False,
+                stop_sim_if_not_moving=True,
+                use_static_target=False,
+                reset_drone_state=reset_state,
+            )
+
+            drone_position = self.simulation.drone.state['pos']
+            reached_goal = np.linalg.norm(drone_position - self.final_target) <= self.termination_distance
+            if reached_goal:
+                return self._finalize_episode(
+                    reached_goal=True,
+                    forced_speed=float(waypoint['v']),
+                    stopped_by_agent=False,
+                    last_waypoint=waypoint,
+                )
+
+        return self._finalize_episode(
+            reached_goal=False,
+            forced_speed=float(waypoints[-1]['v']) if waypoints else self._default_terminal_speed(),
+            stopped_by_agent=False,
+            last_waypoint=waypoints[-1] if waypoints else None,
+        )
 
     def _calculate_costs(self):
         """Return the current cost metrics computed by the shared evaluator."""

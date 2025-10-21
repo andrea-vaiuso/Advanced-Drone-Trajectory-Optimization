@@ -159,6 +159,7 @@ class MetaHeuristicOptimizer:
     # ------------------------------------------------------------------
     def calculate_costs(
         self,
+        time_weight: float = 1.0,
         altitude_weight: float = 1e-2,
         power_weight: float = 1e-4,
         noise_weight: float = 1.5e1,
@@ -192,7 +193,7 @@ class MetaHeuristicOptimizer:
             np.sum(np.array(sim.altitude_penalty_history)) * altitude_weight if weight_penalties else 0.0
         )
 
-        time_cost = final_time
+        time_cost = final_time * time_weight
         if sim.spl_history:
             spl = np.array(sim.spl_history, dtype=float)
             spl_weighted = spl * noise_penalty_history if weight_penalties else spl
