@@ -3,10 +3,10 @@
 import numpy as np
 
 from Drone.Simulation import Simulation
-from Optimizations.optimizer import MetaHeuristicOptimizer
+from Optimizations.optimizer import Optimizer
 
 
-class GWOOptimizer(MetaHeuristicOptimizer):
+class GWOOptimizer(Optimizer):
     """Optimize waypoint perturbations with the Grey Wolf metaheuristic.
 
     Each wolf in the pack represents a candidate perturbation of the neutral

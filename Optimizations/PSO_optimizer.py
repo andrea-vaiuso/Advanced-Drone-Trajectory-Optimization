@@ -3,10 +3,10 @@
 import numpy as np
 
 from Drone.Simulation import Simulation
-from Optimizations.optimizer import MetaHeuristicOptimizer
+from Optimizations.optimizer import Optimizer
 
 
-class PSOOptimizer(MetaHeuristicOptimizer):
+class PSOOptimizer(Optimizer):
     """Search waypoint perturbations using Particle Swarm Optimization.
 
     Every particle stores a vector of perturbations relative to the neutral

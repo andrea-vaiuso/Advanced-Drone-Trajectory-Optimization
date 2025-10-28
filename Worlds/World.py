@@ -7,6 +7,7 @@ import json
 import pickle
 import numpy as np
 from PIL import Image
+import matplotlib.pyplot as plt
 
 # ---------------- World Class ----------------
 class World:
@@ -52,9 +53,18 @@ class World:
     
     DEFAULT_AREA_ID = 3
 
-    def __init__(self, grid_size, max_world_size, world_name="World", background_image_path=None):
+    def __init__(self, grid_size, world_size, world_name="World", background_image_path=None):
+        """
+        Initializes a World instance.
+        Args:
+            grid_size (int): Size of each grid cell in the world. This parameter defines the resolution of the world grid for area classification and noise receivers placement.
+            world_size (int): Total size of the world (assumed square) in meters.
+            world_name (str): Name of the world.
+            background_image_path (str): Path to the background image file.
+        """
+
         self.grid_size = grid_size
-        self.max_world_size = max_world_size
+        self.max_world_size = world_size // grid_size
         self.grid = {}  # mapping: area coordinate tuple -> area_id
         self.world_name = world_name
         self.background_image = None
@@ -162,8 +172,61 @@ class World:
     def load_world(cls, filename):
         with open(filename, 'rb') as file:
             data = pickle.load(file)
-        world = cls(data['grid_size'], data['max_world_size'], data['world_name'])
+        world = cls(data['grid_size'], data['max_world_size'] * data['grid_size'], data['world_name'])
         world.grid = data['grid']
         if data['background_image'] is not None:
             world.background_image = data['background_image']
         return world
+    
+    def plot_world_from_top(self, image_alpha=0.5, A=None, B=None):
+        fig, ax = plt.subplots(figsize=(8, 6))
+        grid_size = self.grid_size
+
+        # Background image
+        if getattr(self, "background_image", None) is not None:
+            bg_img = np.array(self.background_image)
+            ax.imshow(
+                bg_img,
+                extent=[0, self.max_world_size, 0, self.max_world_size],
+                origin="lower",
+                alpha=image_alpha,
+                zorder=-1,
+            )
+
+        # Grid
+        for (x, y, z), params in self.grid.items():
+            if z == 0:
+                rect = plt.Rectangle(
+                    (x * grid_size, y * grid_size),
+                    grid_size,
+                    grid_size,
+                    color=self.AREA_PARAMS[params]["color"],
+                    alpha=self.AREA_PARAMS[params]["alpha"],
+                )
+                ax.add_patch(rect)
+        
+        # Plot points A and B if provided
+        if A is not None:
+            ax.plot(A[0], A[1], marker='o', color='cyan', markersize=10, label='Point A')
+            ax.text(A[0] + 1, A[1] + 1, 'A', color='cyan', fontsize=12, weight='bold')
+        if B is not None:
+            ax.plot(B[0], B[1], marker='o', color='magenta', markersize=10, label='Point B')
+            ax.text(B[0] + 1, B[1] + 1, 'B', color='magenta', fontsize=12, weight='bold')
+        
+        ax.set_xlim(0, self.max_world_size * grid_size)
+        ax.set_ylim(0, self.max_world_size * grid_size)
+        ax.set_xlabel("X (meters)")
+        ax.set_ylabel("Y (meters)")
+        ax.set_title(f"World: {self.world_name}")
+        plt.grid(True)
+        plt.show()
+
+if __name__ == "__main__":
+    world = World(grid_size=5, world_size=100, world_name="Test World")
+    world.set_area_parameters(0, 100, 0, 100, World.AREA_PARAMS[3])  # Open Field as base
+    world.set_area_parameters(30, 69, 30, 70, World.AREA_PARAMS[4])  # Forbidden Area
+    world.set_area_parameters(30, 69, 0, 29, World.AREA_PARAMS[1])   # Housing Estate
+    world.set_area_parameters(30, 69, 71, 99, World.AREA_PARAMS[2])  # Industrial Area
+    world.set_area_parameters(30, 69, 86, 89, World.AREA_PARAMS[3])  # Tunnel of Open Field
+    world.save_world("Worlds/training_world.pkl")
+    world.plot_world_from_top(image_alpha=0.5)

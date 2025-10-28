@@ -7,23 +7,25 @@ import numpy as np
 from gymnasium import Env, spaces
 
 from Drone.Simulation import Simulation
-from Optimizations.optimizer import MetaHeuristicOptimizer
+from Optimizations.optimizer import Optimizer
 
 
-class CostEvaluator(MetaHeuristicOptimizer):
+class CostEvaluator(Optimizer):
     """Expose the metaheuristic cost evaluator without running an optimiser."""
 
-    def __init__(self, simulation_object, name: str = "RL_COST") -> None:
+    def __init__(self, simulation_object, name: str = "RL_COST", mkdirs: bool = True) -> None:
         super().__init__(
             simulation_object=simulation_object,
             opt_method_name=name,
             config_file=None,
             verbose=False,
             set_initial_obs=False,
+            mkdirs=mkdirs,
         )
         # Override base directory to keep RL assets under the RL folder
         self.base_dir = os.path.join("RL", name)
-        os.makedirs(self.base_dir, exist_ok=True)
+        if mkdirs:
+            os.makedirs(self.base_dir, exist_ok=True)
 
     def optimize(self):
         raise NotImplementedError("CostEvaluator does not implement an optimization routine.")
@@ -88,7 +90,7 @@ class DroneTrajectoryEnv(Env):
 
         # Reference internal waypoints on the direct A→B segment.
         self.reference_points = np.asarray(
-            MetaHeuristicOptimizer.linspace_internal_points(
+            Optimizer.linspace_internal_points(
                 self.start_point,
                 self.final_target,
                 self.max_waypoints,
@@ -427,7 +429,17 @@ class DroneTrajectoryEnv(Env):
         return world_min, world_max
 
     def _initialize_action_bounds(self, raw_low: np.ndarray, raw_high: np.ndarray):
-        """Compute global and per-waypoint action bounds for the SAC policy."""
+        """Compute global and per-waypoint action bounds for the SAC policy.
+        Args:
+            raw_low: The raw lower bounds from configuration.
+            raw_high: The raw upper bounds from configuration.
+        Returns:
+            A tuple (low_action, high_action, per_waypoint_low, per_waypoint_high).
+                low_action: The global lower bounds for the action space.
+                high_action: The global upper bounds for the action space.
+                per_waypoint_low: The per-waypoint lower bounds for each waypoint.
+                per_waypoint_high: The per-waypoint upper bounds for each waypoint.
+        """
         if self.max_waypoints <= 0:
             low_action = raw_low.astype(np.float32)
             high_action = raw_high.astype(np.float32)
@@ -440,7 +452,7 @@ class DroneTrajectoryEnv(Env):
         if max_offset is not None and max_offset <= 0:
             max_offset = None
 
-        world_low_flat, world_high_flat = MetaHeuristicOptimizer.build_particle_bounds(
+        world_low_flat, world_high_flat = Optimizer.build_particle_bounds(
             self.start_point,
             self.final_target,
             self.max_waypoints,
@@ -469,7 +481,7 @@ class DroneTrajectoryEnv(Env):
             per_waypoint_high = per_waypoint_high_core
 
         if np.any(per_waypoint_low > per_waypoint_high):
-            raise ValueError("Inconsistent action bounds: some waypoint intervals are invalid.")
+            raise ValueError(f"Inconsistent action bounds: some waypoint intervals are invalid: {per_waypoint_low[per_waypoint_low > per_waypoint_high]} > {per_waypoint_high[per_waypoint_low > per_waypoint_high]}")
 
         low_action = np.max(per_waypoint_low, axis=0).astype(np.float32)
         high_action = np.min(per_waypoint_high, axis=0).astype(np.float32)

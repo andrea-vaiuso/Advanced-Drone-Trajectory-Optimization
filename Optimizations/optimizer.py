@@ -12,7 +12,7 @@ import yaml
 from Drone.Simulation import Simulation
 
 
-class MetaHeuristicOptimizer:
+class Optimizer:
     """Base class offering logging, configuration and evaluation helpers.
 
     Subclasses only need to implement :meth:`optimize` while relying on this
@@ -29,8 +29,9 @@ class MetaHeuristicOptimizer:
         verbose: bool = True,
         set_initial_obs: bool = True,
         study_name: str = "",
+        mkdirs: bool = True,
     ) -> None:
-        """Initialise the optimizer façade.
+        """Initialise the optimizer.
 
         Args:
             simulation_object: The simulator instance shared by all optimizers.
@@ -41,6 +42,7 @@ class MetaHeuristicOptimizer:
             set_initial_obs: Whether optimizers may inject a deterministic
                 starting particle as the first individual of the population.
             study_name: Optional suffix appended to the output directory name.
+            mkdirs: When ``True`` creates the output directories for the study.
         """
 
         self.opt_method_name = opt_method_name
@@ -58,6 +60,7 @@ class MetaHeuristicOptimizer:
         self.verbose = verbose
         self.set_initial_obs = set_initial_obs
         self.study_name = study_name
+        self.mkdirs = mkdirs
 
         self.base_dir = os.path.join("Optimizations", opt_method_name)
         os.makedirs(self.base_dir, exist_ok=True)
@@ -69,6 +72,8 @@ class MetaHeuristicOptimizer:
         self.end_time = 0.0
         self.last_time = 0.0
 
+        self.best_params = None
+
     # ------------------------------------------------------------------
     # Convenience helpers
     # ------------------------------------------------------------------
@@ -78,15 +83,18 @@ class MetaHeuristicOptimizer:
         return f"[ {self.opt_method_name} ]>"
 
     def start_optimization(self) -> None:
-        """Execute :meth:`optimize` and persist the resulting study artefacts."""
+        """
+        Execute :meth:`optimize` and persist the resulting study artefacts.
+        """
 
         datetime_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         folder_name = datetime_str if not self.study_name else f"{datetime_str}_{self.study_name}"
         self.study_dir = os.path.join(self.base_dir, folder_name)
-        os.makedirs(self.study_dir, exist_ok=True)
+        if self.mkdirs: os.makedirs(self.study_dir, exist_ok=True)
 
         self.start_time = time()
         best_params = self.optimize()
+        self.best_params = best_params
         self.end_time = time() - self.start_time
 
         if self.verbose:
@@ -313,7 +321,7 @@ class MetaHeuristicOptimizer:
     ):
         """Compute the feasible perturbation bounds for each waypoint."""
 
-        base = MetaHeuristicOptimizer.linspace_internal_points(A, B, n_points)
+        base = Optimizer.linspace_internal_points(A, B, n_points)
         dmin = np.array([world_min, world_min, world_min]) - base
         dmax = np.array([world_max, world_max, world_max]) - base
 

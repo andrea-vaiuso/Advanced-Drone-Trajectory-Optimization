@@ -402,7 +402,6 @@ def get_total_PA(sim: Simulation) -> float:
         total_PA += value.get('PA', 0.0) / sim.simulation_time
     return total_PA
 
-
 def show2DWorld(world: World, trajectory=None, A=None, B=None, targets=None,
                 image_alpha=0.7, save=False, save_folder="OptimizedTrajectory"):
     """

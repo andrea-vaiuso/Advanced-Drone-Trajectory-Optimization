@@ -4,7 +4,7 @@ from Worlds.World import World
 import Drone.Simulation
 from matplotlib import pyplot as plt
 from Optimizations.PSO_optimizer import PSOOptimizer
-from Optimizations.optimizer import MetaHeuristicOptimizer as CostWrapper
+from Optimizations.optimizer import Optimizer as CostWrapper
 
 waypoints_optimized_gwo = [
         {

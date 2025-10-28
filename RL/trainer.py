@@ -9,7 +9,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3 import SAC
 
 from Drone.Simulation import Simulation
-from Optimizations.optimizer import MetaHeuristicOptimizer
+from Optimizations.optimizer import Optimizer
 from Worlds.World import World
 from RL.callbacks import RLEpisodeLogger
 from RL.environment import CostEvaluator, DroneTrajectoryEnv
@@ -23,8 +23,7 @@ from main import (
     load_pid_gains,
 ) 
 
-
-class BaseRLTrainer(MetaHeuristicOptimizer):
+class BaseRLTrainer(Optimizer):
     """Bridge Stable-Baselines3 trainers with the metaheuristic utilities."""
 
     def __init__(self, config_file: str, verbose: bool = True) -> None:
@@ -109,7 +108,7 @@ class BaseRLTrainer(MetaHeuristicOptimizer):
 
         def _factory():
             simulation = self._create_simulation()
-            cost_evaluator = CostEvaluator(simulation, name=f"{self.opt_method_name}_COST")
+            cost_evaluator = CostEvaluator(simulation, name=f"{self.opt_method_name}_COST", mkdirs=False)
             env = DroneTrajectoryEnv(
                 simulation=simulation,
                 cost_evaluator=cost_evaluator,
