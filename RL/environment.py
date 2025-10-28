@@ -411,21 +411,34 @@ class DroneTrajectoryEnv(Env):
         """Infer the spatial bounds of the environment from the simulation."""
         world = getattr(self.simulation, "world", None)
         world_min = np.zeros(3, dtype=float)
-        world_max_value = None
+        world_extent = None
+
         if world is not None:
             max_world_size = getattr(world, "max_world_size", None)
-            if max_world_size is not None:
-                try:
-                    world_max_value = float(max_world_size)
-                except (TypeError, ValueError):
-                    world_max_value = None
+            grid_size = getattr(world, "grid_size", None)
 
-        if world_max_value is None or world_max_value <= 0:
+            try:
+                max_world_size_val = float(max_world_size) if max_world_size is not None else None
+            except (TypeError, ValueError):
+                max_world_size_val = None
+
+            try:
+                grid_size_val = float(grid_size) if grid_size is not None else None
+            except (TypeError, ValueError):
+                grid_size_val = None
+
+            if max_world_size_val is not None and max_world_size_val > 0:
+                if grid_size_val is not None and grid_size_val > 0:
+                    world_extent = max_world_size_val * grid_size_val
+                else:
+                    world_extent = max_world_size_val
+
+        if world_extent is None or world_extent <= 0:
             coords = np.vstack([self.start_point, self.final_target]) if self.start_point.size else np.zeros((0, 3))
             fallback = float(np.max(coords)) if coords.size else 0.0
-            world_max_value = max(fallback, 1.0)
+            world_extent = max(fallback, 1.0)
 
-        world_max = np.full(3, world_max_value, dtype=float)
+        world_max = np.array([world_extent, world_extent, world_extent], dtype=float)
         return world_min, world_max
 
     def _initialize_action_bounds(self, raw_low: np.ndarray, raw_high: np.ndarray):
@@ -492,3 +505,84 @@ class DroneTrajectoryEnv(Env):
             )
 
         return low_action, high_action, per_waypoint_low, per_waypoint_high
+
+    # ------------------------------------------------------------------
+    # Visualisation helpers
+    # ------------------------------------------------------------------
+    def plot_waypoint_search_regions(self, show=True, alpha=0.25):
+        """Visualise the feasible waypoint regions in the X/Y and X/Z planes.
+
+        Args:
+            show: When ``True`` the generated figure is displayed immediately.
+            alpha: Transparency level applied to the feasible-region overlays.
+
+        Returns:
+            The ``(figure, axes)`` tuple returned by :func:`matplotlib.pyplot.subplots`.
+        """
+
+        if self.per_waypoint_low.size == 0 or self.reference_points.size == 0:
+            raise RuntimeError("No waypoint bounds are available to plot.")
+
+        import matplotlib.pyplot as plt
+        from matplotlib.patches import Rectangle
+
+        fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+        top_view_ax, side_view_ax = axes
+
+        top_view_ax.set_title("Waypoint search regions (top view X/Y)")
+        side_view_ax.set_title("Waypoint search regions (side view X/Z)")
+
+        ref_points = np.asarray(self.reference_points, dtype=float)
+
+        for idx, reference in enumerate(ref_points):
+            low = self.per_waypoint_low[idx, :3]
+            high = self.per_waypoint_high[idx, :3]
+
+            x_min, x_max = reference[0] + low[0], reference[0] + high[0]
+            y_min, y_max = reference[1] + low[1], reference[1] + high[1]
+            z_min, z_max = reference[2] + low[2], reference[2] + high[2]
+
+            if x_max < x_min:
+                x_min, x_max = x_max, x_min
+            if y_max < y_min:
+                y_min, y_max = y_max, y_min
+            if z_max < z_min:
+                z_min, z_max = z_max, z_min
+
+            width_xy = x_max - x_min
+            height_xy = y_max - y_min
+            width_xz = x_max - x_min
+            height_xz = z_max - z_min
+
+            top_view_ax.add_patch(
+                Rectangle((x_min, y_min), width_xy, height_xy, color="red", alpha=alpha, lw=0)
+            )
+            side_view_ax.add_patch(
+                Rectangle((x_min, z_min), width_xz, height_xz, color="red", alpha=alpha, lw=0)
+            )
+
+        top_view_ax.scatter(ref_points[:, 0], ref_points[:, 1], c="black", label="Reference waypoint", zorder=5)
+        side_view_ax.scatter(ref_points[:, 0], ref_points[:, 2], c="black", label="Reference waypoint", zorder=5)
+
+        top_view_ax.set_xlim(self.world_min_bounds[0], self.world_max_bounds[0])
+        top_view_ax.set_ylim(self.world_min_bounds[1], self.world_max_bounds[1])
+        side_view_ax.set_xlim(self.world_min_bounds[0], self.world_max_bounds[0])
+        side_view_ax.set_ylim(self.world_min_bounds[2], self.world_max_bounds[2])
+
+        top_view_ax.set_xlabel("X [m]")
+        top_view_ax.set_ylabel("Y [m]")
+        side_view_ax.set_xlabel("X [m]")
+        side_view_ax.set_ylabel("Z [m]")
+
+        top_view_ax.set_aspect("equal", adjustable="box")
+        side_view_ax.set_aspect("equal", adjustable="box")
+
+        top_view_ax.legend(loc="upper right")
+        side_view_ax.legend(loc="upper right")
+
+        fig.tight_layout()
+
+        if show:
+            plt.show()
+
+        return fig, axes
