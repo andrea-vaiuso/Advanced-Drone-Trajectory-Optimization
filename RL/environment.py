@@ -36,8 +36,9 @@ class DroneTrajectoryEnv(Env):
 
     The environment interprets actions as offsets around reference points
     placed on the straight segment between the start and target locations.  A
-    final action component optionally terminates waypoint generation early so
-    the agent can choose between trajectories with different waypoint counts.
+    gating component in the action lets the policy skip individual reference
+    points so it can consider fewer waypoints than the configured maximum
+    without being forced to stop entirely.
     """
 
     metadata = {"render_modes": []}
@@ -83,8 +84,8 @@ class DroneTrajectoryEnv(Env):
         ) = self._initialize_action_bounds(raw_low, raw_high)
 
         self.speed_index = 3
-        self.stop_action_index = 4 if self.low_action.size > 4 else None
-        self.stop_threshold = 0.5
+        self.selection_gate_index = 4 if self.low_action.size > 4 else None
+        self.selection_threshold = 0.5
 
         self.action_space = spaces.Box(low=self.low_action, high=self.high_action, dtype=np.float32)
 
@@ -104,7 +105,7 @@ class DroneTrajectoryEnv(Env):
         self.observation_space = spaces.Box(low=obs_low, high=obs_high, dtype=np.float32)
 
         self.current_waypoints = []
-        self.current_step = 0
+        self.next_candidate_index = 0
         self._needs_reset = True
         self.last_episode_data = None
 
@@ -117,7 +118,7 @@ class DroneTrajectoryEnv(Env):
         del options  # unused
 
         self.current_waypoints = []
-        self.current_step = 0
+        self.next_candidate_index = 0
         self._needs_reset = True
         self.last_episode_data = None
 
@@ -147,15 +148,47 @@ class DroneTrajectoryEnv(Env):
         """
         action = np.clip(action, self.low_action, self.high_action).astype(float)
 
-        if self._should_request_stop(action):
-            return self._finalize_episode(
-                reached_goal=False,
-                forced_speed=float(action[self.speed_index]),
-                stopped_by_agent=True,
-                last_waypoint=None,
-            )
+        if not self._should_use_waypoint(action):
+            skipped_index = self.next_candidate_index
+            self.next_candidate_index += 1
 
-        waypoint = self._build_waypoint(action, self.current_step)
+            costs = self._calculate_costs()
+            reward = -float(costs['total_cost'])
+
+            info = {
+                'costs': costs,
+                'waypoint': None,
+                'trajectory': deepcopy(self.current_waypoints),
+                'stopped_by_agent': False,
+                'skipped_waypoint_index': skipped_index,
+                'skipped_waypoint': True,
+            }
+
+            terminated = False
+            truncated = False
+
+            drone_position = self.simulation.drone.state['pos']
+            reached_goal = (
+                np.linalg.norm(drone_position - self.final_target) <= self.termination_distance
+            )
+            exhausted_candidates = self.next_candidate_index >= self.max_waypoints
+
+            if reached_goal or exhausted_candidates:
+                last_wp = self.current_waypoints[-1] if self.current_waypoints else None
+                return self._finalize_episode(
+                    reached_goal=reached_goal,
+                    forced_speed=float(action[self.speed_index])
+                    if last_wp is None
+                    else float(last_wp['v']),
+                    stopped_by_agent=False,
+                    last_waypoint=last_wp,
+                    cached_costs=costs if reached_goal else None,
+                )
+
+            observation = self._get_observation()
+            return observation, reward, terminated, truncated, info
+
+        waypoint = self._build_waypoint(action, self.next_candidate_index)
         self.current_waypoints.append(waypoint)
         self.simulation.waypoints = [deepcopy(waypoint)]
         self.simulation.current_seg_idx = 0
@@ -181,12 +214,13 @@ class DroneTrajectoryEnv(Env):
             'waypoint': waypoint,
             'trajectory': deepcopy(self.current_waypoints),
             'stopped_by_agent': False,
+            'skipped_waypoint': False,
         }
 
-        self.current_step += 1
+        self.next_candidate_index += 1
         drone_position = self.simulation.drone.state['pos']
         reached_goal = np.linalg.norm(drone_position - self.final_target) <= self.termination_distance
-        exhausted_budget = self.current_step >= self.max_waypoints
+        exhausted_budget = self.next_candidate_index >= self.max_waypoints
 
         if reached_goal or exhausted_budget:
             return self._finalize_episode(
@@ -219,6 +253,9 @@ class DroneTrajectoryEnv(Env):
         self.reset()
         for waypoint in waypoints:
             self.current_waypoints.append(waypoint)
+            self.next_candidate_index = min(
+                self.max_waypoints, self.next_candidate_index + 1
+            )
             self.simulation.waypoints = [deepcopy(waypoint)]
             self.simulation.current_seg_idx = 0
 
@@ -264,13 +301,13 @@ class DroneTrajectoryEnv(Env):
         position = reference + offset
         return self._build_absolute_waypoint(position, float(action[self.speed_index]))
 
-    def _should_request_stop(self, action: np.ndarray) -> bool:
-        """Return ``True`` when the action requests early termination."""
+    def _should_use_waypoint(self, action: np.ndarray) -> bool:
+        """Return ``True`` when the action selects the current waypoint."""
 
-        if self.stop_action_index is None:
-            return False
-        stop_signal = float(action[self.stop_action_index])
-        return stop_signal <= self.stop_threshold
+        if self.selection_gate_index is None:
+            return True
+        gate_value = float(action[self.selection_gate_index])
+        return gate_value > self.selection_threshold
 
     def _finalize_episode(
         self,
@@ -298,6 +335,7 @@ class DroneTrajectoryEnv(Env):
             'waypoint': last_waypoint if last_waypoint is not None else final_wp,
             'trajectory': deepcopy(self.current_waypoints),
             'stopped_by_agent': stopped_by_agent,
+            'skipped_waypoint': False,
         }
 
         self.last_episode_data = {
@@ -380,7 +418,9 @@ class DroneTrajectoryEnv(Env):
         thrust_val = float(np.sum(thrust)) if np.size(thrust) else float(thrust)
         power_val = float(np.sum(power)) if np.size(power) else float(power)
         obs_components.append(np.array([thrust_val, power_val], dtype=np.float32))
-        steps_left = np.array([float(self.max_waypoints - self.current_step)], dtype=np.float32)
+        steps_left = np.array(
+            [float(self.max_waypoints - self.next_candidate_index)], dtype=np.float32
+        )
         obs_components.append(steps_left)
         return np.concatenate(obs_components, dtype=np.float32)
 
