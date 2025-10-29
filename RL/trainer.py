@@ -229,11 +229,12 @@ class SACTrajectoryTrainer(BaseRLTrainer):
         super().__init__(config_file, verbose)
         self.specific_waypoints = specific_waypoints
         self.run_zero_waypoint_episode = run_zero_waypoint_episode
-
+        self.env_factory = self._build_env_factory()
+        self.environment = self.env_factory()
 
     def optimize(self):  # type: ignore[override]
         """Train the SAC agent and return the best recorded trajectory."""
-        env_factory = self._build_env_factory()
+        env_factory = self.env_factory
         if self.run_zero_waypoint_episode:
             self._run_zero_waypoint_episode(env_factory)
         if self.specific_waypoints is not None:
@@ -294,6 +295,7 @@ class SACTrajectoryTrainer(BaseRLTrainer):
             "train_freq": self.rl_config.get("train_freq", 1),
             "gradient_steps": self.rl_config.get("gradient_steps", 1),
             "ent_coef": self.rl_config.get("ent_coef", "auto"),
+            "target_entropy": self.rl_config.get("target_entropy", "auto"),
             "target_update_interval": int(self.rl_config.get("target_update_interval", 1)),
             "learning_starts": int(self.rl_config.get("learning_starts", 1_000)),
             "device": self.rl_config.get("device", "auto"),

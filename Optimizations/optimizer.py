@@ -119,14 +119,16 @@ class Optimizer:
         costs = [abs(cost) for cost in self.costs_history]
         best_costs = [min(costs[: idx + 1]) for idx in range(len(costs))]
 
-        plt.figure(figsize=(10, 5))
+        plt.figure(figsize=(8, 4))
         plt.plot(best_costs, color="blue", label="Cost Trend", marker="o", markersize=3, zorder=1)
+        plt.yscale('symlog', linthresh=300, linscale=1.0, base=10)
         best_cost = min(costs)
         best_idx = costs.index(best_cost)
         plt.scatter(best_idx, best_cost, color="red", label="Best Cost", zorder=5, marker="x", s=100)
         plt.title(f"Cost Trend Over Iterations - ({self.opt_method_name})")
         plt.xlabel("Iteration")
         plt.ylabel("Cost")
+        plt.grid(True, which="both", axis="y", linestyle="--", linewidth=0.5)
         plt.legend()
         if save_fig and self.study_dir:
             path = os.path.join(self.study_dir, "costs_trend.png")

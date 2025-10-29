@@ -287,10 +287,11 @@ class DroneTrajectoryEnv(Env):
             last_waypoint=waypoints[-1] if waypoints else None,
         )
 
-    def _calculate_costs(self):
+    def _calculate_costs(self, include_uncompletition_penalty: bool = False) -> dict:
         """Return the current cost metrics computed by the shared evaluator."""
         kwargs = dict(self.cost_parameters)
         kwargs.setdefault('save_costs_in_history', False)
+        if not include_uncompletition_penalty: kwargs["completion_weight"] = 0.0
         result = self.cost_evaluator.calculate_costs(**kwargs, alternative_simulation=self.simulation)
         return {k: float(v) for k, v in result.items()}
 
@@ -549,7 +550,7 @@ class DroneTrajectoryEnv(Env):
     # ------------------------------------------------------------------
     # Visualisation helpers
     # ------------------------------------------------------------------
-    def plot_waypoint_search_regions(self, show=True, alpha=0.25):
+    def plot_waypoint_search_regions(self, show=True, alpha=0.25, figsize=(12, 6)):
         """Visualise the feasible waypoint regions in the X/Y and X/Z planes.
 
         Args:
@@ -566,7 +567,7 @@ class DroneTrajectoryEnv(Env):
         import matplotlib.pyplot as plt
         from matplotlib.patches import Rectangle
 
-        fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+        fig, axes = plt.subplots(1, 2, figsize=figsize)
         top_view_ax, side_view_ax = axes
 
         top_view_ax.set_title("Waypoint search regions (top view X/Y)")

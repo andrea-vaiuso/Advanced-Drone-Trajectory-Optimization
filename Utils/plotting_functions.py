@@ -6,6 +6,10 @@
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+from matplotlib.collections import LineCollection
+from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.lines import Line2D
+
 import numpy as np
 from Utils.utils import euler_to_rot
 from Drone.Simulation import Simulation
@@ -403,15 +407,38 @@ def get_total_PA(sim: Simulation) -> float:
     return total_PA
 
 def show2DWorld(world: World, trajectory=None, A=None, B=None, targets=None,
-                image_alpha=0.7, save=False, save_folder="OptimizedTrajectory"):
+                image_alpha=0.7, save=False, save_folder="OptimizedTrajectory",
+                horiz_speed_history=None, vertical_speed_history=None):
     """
     Visualize a 2D representation of the world with one drone:
     - trajectory: list of (x, y) or array of shape [N, 2]
     - A: dict {'x': ..., 'y': ...} or tuple (x, y)
     - B: dict {'x': ..., 'y': ...} or tuple (x, y)
     - targets: list of dicts or tuples, each as (x, y) or {'x': ..., 'y': ...}
+
+    Parameters:
+        world (World): World object containing grid and background image.
+        trajectory (list or np.ndarray): Drone trajectory points.
+        A (dict or tuple): Start point.
+        B (dict or tuple): End point.
+        targets (list): List of target points.
+        image_alpha (float): Transparency for background image.
+        save (bool): Whether to save the plot as a PNG file.
+        save_folder (str): Folder to save the plot if save is True.
+        horiz_speed_history (list): History of horizontal speeds.
+        vertical_speed_history (list): History of vertical speeds.
     """
-    fig, ax = plt.subplots(figsize=(8, 6))
+    speed_magnitudes = None
+    if all([
+            vertical_speed_history,
+            horiz_speed_history,
+            len(vertical_speed_history) == len(horiz_speed_history) == len(trajectory)
+        ]):
+        raw_speed_magnitudes = np.sqrt(np.array(vertical_speed_history)**2 + np.array(horiz_speed_history)**2)
+        # Normalize speeds for color mapping
+        speed_magnitudes = (raw_speed_magnitudes) / (raw_speed_magnitudes.max() + 1e-6)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
     grid_size = world.grid_size
 
     # Background image
@@ -448,18 +475,20 @@ def show2DWorld(world: World, trajectory=None, A=None, B=None, targets=None,
     plotted_anything = False
     color = "blue"
 
+    offset = 10 * world.max_world_size * grid_size / 1000  # 1% offset for text
+
     # Start point
     A_xy = as_xy(A)
     if A_xy is not None:
         ax.scatter(A_xy[0], A_xy[1], color="red", s=60, marker="o", label="Start A")
-        ax.text(A_xy[0] + 10, A_xy[1] + 10, "A", color="red", fontsize=10)
+        ax.text(A_xy[0] + offset, A_xy[1] + offset, "A", color="red", fontsize=10)
         plotted_anything = True
 
     # End point
     B_xy = as_xy(B)
     if B_xy is not None:
         ax.scatter(B_xy[0], B_xy[1], color="green", s=60, marker="o", label="Goal B")
-        ax.text(B_xy[0] + 10, B_xy[1] + 10, "B", color="green", fontsize=10)
+        ax.text(B_xy[0] + offset, B_xy[1] + offset, "B", color="green", fontsize=10)
         plotted_anything = True
 
     # Targets
@@ -468,26 +497,248 @@ def show2DWorld(world: World, trajectory=None, A=None, B=None, targets=None,
         if pts.size > 0:
             ax.scatter(pts[:, 0], pts[:, 1], color=color, s=30, label="Targets")
             for j, pt in enumerate(pts, 1):
-                ax.text(pt[0] + 7, pt[1] + 7, f"{j}", color=color, fontsize=8)
+                ax.text(pt[0] + offset, pt[1] + offset, f"{j}", color=color, fontsize=8)
             plotted_anything = True
 
     # Trajectory
     if trajectory is not None:
-        traj_arr = np.array(trajectory, dtype=float)
-        if traj_arr.ndim == 2 and traj_arr.shape[1] >= 2 and len(traj_arr) > 0:
-            ax.plot(traj_arr[:, 0], traj_arr[:, 1], linestyle="--", lw=1.5, color=color, label="Trajectory")
+        traj_arr = np.asarray(trajectory, dtype=float)
+        if traj_arr.ndim == 2 and traj_arr.shape[0] > 1:
+            xy = traj_arr[:, :2]  # keep X,Y only
+
+            if speed_magnitudes is None:
+                ax.plot(xy[:, 0], xy[:, 1], linestyle="--", lw=1.5,
+                        color="blue", label="Trajectory")
+            else:
+                seg_speeds = 0.5 * (speed_magnitudes[:-1] + speed_magnitudes[1:])
+                segments = np.stack([xy[:-1], xy[1:]], axis=1)  # (M, 2, 2)
+
+                cmap = LinearSegmentedColormap.from_list(
+                    "speedmap", ["green", "yellow", "orange", "red", "violet"], N=256
+                )
+                vmin, vmax = float(seg_speeds.min()), float(seg_speeds.max())
+                if vmax == vmin:
+                    vmax = vmin + 1.0
+                norm = Normalize(vmin=vmin, vmax=vmax)
+
+                lc = LineCollection(segments, cmap=cmap, norm=norm,
+                                    linestyles="dashed", linewidth=1.5)
+                lc.set_array(seg_speeds)
+                ax.add_collection(lc)
+
+                ax.add_line(Line2D([0], [0], linestyle="--", color="k",
+                                label="Trajectory (speed)"))
+
             plotted_anything = True
+
+    cbar = fig.colorbar(lc, ax=ax, orientation="vertical")
+    cbar.set_label("Drone speed [m/s]")
+    # Label ticks with physical (non-normalized) values
+    cbar.set_ticks(np.linspace(0, 1, 5))
+    cbar.set_ticklabels([
+        f"{v:.2f}" for v in np.linspace(
+            raw_speed_magnitudes.min(),
+            raw_speed_magnitudes.max(),
+            5
+        )
+    ])
 
     ax.set_xlabel("X (m)")
     ax.set_ylabel("Y (m)")
     ax.set_title(f"2D World '{world.world_name}' XY")
-    ax.set_xlim(0, world.max_world_size)
-    ax.set_ylim(0, world.max_world_size)
+    ax.set_xlim(0, world.max_world_size * grid_size)
+    ax.set_ylim(0, world.max_world_size * grid_size)
     ax.grid(True)
+
+    if plotted_anything:
+        # Set legend location to downright if anything is plotted
+        ax.legend(loc="lower right")
+
+    if save:
+        plt.savefig(f"{save_folder}/trajectory_{world.world_name}.png", dpi=300, bbox_inches="tight")
+    plt.show()
+
+
+from typing import Iterable, Optional
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.lines import Line2D
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
+
+def show3DWorld(world,
+                trajectory: Optional[Iterable]=None,
+                A=None, B=None, targets=None,
+                image_alpha: float=0.7,  # kept for API parity, unused in 3D
+                save: bool=False, save_folder: str="OptimizedTrajectory",
+                horiz_speed_history: Optional[Iterable]=None,
+                vertical_speed_history: Optional[Iterable]=None,
+                view_pov: tuple=(30, 45)):
+    """
+    3D view with XY ground grid colored by area params and a speed-colored dashed trajectory.
+
+    Inputs:
+      - trajectory: list/array of shape [N, 3] (x, y, z).
+      - A, B: dict {'x','y','z'} or tuple (x, y, z). If z missing, defaults to 0.
+      - targets: list of dicts/tuples. If z missing, defaults to 0.
+      - horiz_speed_history: horizontal speed magnitude per step (m/s).
+      - vertical_speed_history: vertical speed magnitude per step (m/s).
+      - view_pov: tuple (elevation, azimuth) angles for 3D view.
+    """
+    # --- speeds
+    raw_speed_magnitudes = None
+    speed_magnitudes = None
+    if (horiz_speed_history is not None and vertical_speed_history is not None
+        and trajectory is not None):
+        n = len(trajectory)
+        if len(horiz_speed_history) == n and len(vertical_speed_history) == n and n > 1:
+            h = np.asarray(horiz_speed_history, dtype=float)
+            v = np.asarray(vertical_speed_history, dtype=float)
+            raw_speed_magnitudes = np.sqrt(h*h + v*v)  # physical units
+            denom = float(raw_speed_magnitudes.max()) + 1e-6
+            speed_magnitudes = raw_speed_magnitudes / denom  # [0,1]
+
+    fig = plt.figure(figsize=(10, 7))
+    ax = fig.add_subplot(111, projection="3d", elev=view_pov[0], azim=view_pov[1])
+    grid_size = world.grid_size
+    L = world.max_world_size * grid_size
+
+    # --- XY ground cells colored by area
+    # draw filled quads at z=0 for each grid cell having z==0 in world.grid
+    ground_quads = []
+    face_colors = []
+    face_alphas = []
+    for (gx, gy, gz), params in world.grid.items():
+        if gz != 0:
+            continue
+        x0, y0 = gx * grid_size, gy * grid_size
+        x1, y1 = x0 + grid_size, y0 + grid_size
+        quad = [(x0, y0, 0.0), (x1, y0, 0.0), (x1, y1, 0.0), (x0, y1, 0.0)]
+        ground_quads.append(quad)
+        face_colors.append(world.AREA_PARAMS[params]["color"])
+        face_alphas.append(world.AREA_PARAMS[params]["alpha"])
+    if ground_quads:
+        pc = Poly3DCollection(ground_quads, facecolors=face_colors, linewidths=0.2, edgecolors="k")
+        pc.set_alpha(None)  # per-face alpha handled below
+        # Matplotlib does not support per-face alpha directly on Poly3DCollection.
+        # Workaround: set a single alpha and encode translucency into colors if needed.
+        # If AREA_PARAMS already uses RGBA, prefer that. Otherwise use average alpha:
+        if isinstance(face_colors[0], (tuple, list)) and len(face_colors[0]) == 4:
+            pass  # RGBA provided
+        else:
+            pc.set_alpha(float(np.mean(face_alphas)) if face_alphas else 0.5)
+        ax.add_collection3d(pc)
+
+    # --- helpers
+    def as_xyz(p):
+        if p is None:
+            return None
+        if isinstance(p, dict):
+            x = float(p["x"])
+            y = float(p["y"])
+            z = float(p.get("z", 0.0))
+            return x, y, z
+        # tuple/list/np array
+        if len(p) == 2:
+            return float(p[0]), float(p[1]), 0.0
+        return float(p[0]), float(p[1]), float(p[2])
+
+    plotted_anything = False
+    offset = 0.01 * L
+
+    # --- Start point
+    A_xyz = as_xyz(A)
+    if A_xyz is not None:
+        ax.scatter([A_xyz[0]], [A_xyz[1]], [A_xyz[2]], color="red", s=40, marker="o", label="Start A")
+        ax.text(A_xyz[0] + offset, A_xyz[1] + offset, A_xyz[2] + offset, "A", color="red", fontsize=9)
+        plotted_anything = True
+
+    # --- End point
+    B_xyz = as_xyz(B)
+    if B_xyz is not None:
+        ax.scatter([B_xyz[0]], [B_xyz[1]], [B_xyz[2]], color="green", s=40, marker="o", label="Goal B")
+        ax.text(B_xyz[0] + offset, B_xyz[1] + offset, B_xyz[2] + offset, "B", color="green", fontsize=9)
+        plotted_anything = True
+
+    # --- Targets
+    if targets:
+        pts = [as_xyz(t) for t in targets if as_xyz(t) is not None]
+        if len(pts):
+            pts = np.asarray(pts, dtype=float)
+            ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2], color="blue", s=20, label="Targets")
+            for j, pt in enumerate(pts, 1):
+                ax.text(pt[0] + offset, pt[1] + offset, pt[2] + offset, f"{j}", color="blue", fontsize=8)
+            plotted_anything = True
+
+    # --- Trajectory (speed-colored dashed 3D line)
+    lc = None
+    if trajectory is not None:
+        traj = np.asarray(trajectory, dtype=float)
+        if traj.ndim == 2 and traj.shape[0] > 1:
+            # segments (M, 2, 3)
+            segments3d = np.stack([traj[:-1], traj[1:]], axis=1)
+            if speed_magnitudes is None:
+                # fallback dashed line
+                ax.plot(traj[:, 0], traj[:, 1], traj[:, 2],
+                        linestyle="--", linewidth=1.5, color="blue", label="Trajectory")
+            else:
+                seg_speeds = 0.5 * (speed_magnitudes[:-1] + speed_magnitudes[1:])
+                cmap = LinearSegmentedColormap.from_list(
+                    "speedmap", ["green", "yellow", "orange", "red", "violet"], N=256
+                )
+                vmin, vmax = float(seg_speeds.min()), float(seg_speeds.max())
+                if vmax == vmin:
+                    vmax = vmin + 1.0
+                norm = Normalize(vmin=vmin, vmax=vmax)
+                lc = Line3DCollection(segments3d, cmap=cmap, norm=norm,
+                                      linestyles="dashed", linewidth=1.5)
+                lc.set_array(seg_speeds)
+                ax.add_collection3d(lc)
+                # legend proxy
+                ax.add_line(Line2D([0], [0], linestyle="--", color="k", label="Trajectory (speed)"))
+
+            ax.plot(
+                traj[:, 0], traj[:, 1], np.zeros_like(traj[:, 0]),
+                linestyle="--", linewidth=1.5, color="black", alpha=0.8,
+                label="XY projection"
+            )
+            plotted_anything = True
+
+    # --- Colorbar with physical units (if speeds available)
+    if lc is not None and raw_speed_magnitudes is not None:
+        cbar = fig.colorbar(lc, ax=ax, orientation="vertical", pad=0.07, shrink=0.8)
+        cbar.set_label("Drone speed [m/s]")
+        cbar.set_ticks(np.linspace(0, 1, 5))
+        cbar.set_ticklabels([
+            f"{v:.2f}" for v in np.linspace(raw_speed_magnitudes.min(),
+                                            raw_speed_magnitudes.max(), 5)
+        ])
+
+    # --- axes, limits, grid
+    ax.set_xlabel("X (m)")
+    ax.set_ylabel("Y (m)")
+    ax.set_zlabel("Z (m)")
+    ax.set_title(f"3D World '{world.world_name}'")
+
+    ax.set_xlim(0, L)
+    ax.set_ylim(0, L)
+    # Z range from data if available, else [0, L/4]
+    if trajectory is not None and len(np.asarray(trajectory)) > 0 and np.asarray(trajectory).ndim == 2:
+        zmin = float(np.nanmin(np.asarray(trajectory)[:, 2]))
+        zmax = float(np.nanmax(np.asarray(trajectory)[:, 2]))
+        if not np.isfinite(zmin) or not np.isfinite(zmax) or zmax <= zmin:
+            ax.set_zlim(0, max(L * 0.25, 1.0))
+        else:
+            pad = 0.05 * max(1.0, zmax - zmin)
+            ax.set_zlim(max(0.0, zmin - pad), zmax + pad)
+    else:
+        ax.set_zlim(0, max(L * 0.25, 1.0))
 
     if plotted_anything:
         ax.legend(loc="upper left")
 
     if save:
-        plt.savefig(f"{save_folder}/trajectory_{world.world_name}.png", dpi=300, bbox_inches="tight")
+        out = f"{save_folder}/trajectory3D_{world.world_name}.png"
+        plt.savefig(out, dpi=300, bbox_inches="tight")
     plt.show()
