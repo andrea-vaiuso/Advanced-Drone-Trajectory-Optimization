@@ -111,6 +111,8 @@ class DroneTrajectoryEnv(Env):
         
         self.rewards_history = []
         self.return_value = 0
+        self._last_total_cost = 0.0
+        self._previous_total_cost = 0.0
 
     # ------------------------------------------------------------------
     # Gymnasium API
@@ -134,6 +136,8 @@ class DroneTrajectoryEnv(Env):
         self.simulation.waypoints = []
         self.return_value = 0
         self.rewards_history = []
+        self._last_total_cost = 0.0
+        self._previous_total_cost = 0.0
 
         observation = self._get_observation()
         info = {}
@@ -166,7 +170,7 @@ class DroneTrajectoryEnv(Env):
             skipped_index = self.next_candidate_index
             self.next_candidate_index += 1
             reward = 0.0
-            costs = {'total_cost': 0.0}
+            costs = {'total_cost': float(self._last_total_cost)}
 
             info = {
                 'costs': costs,
@@ -197,7 +201,8 @@ class DroneTrajectoryEnv(Env):
                     else float(last_wp['v']),
                     stopped_by_agent=False,
                     last_waypoint=last_wp,
-                    cached_costs=costs
+                    cached_costs=costs,
+                    previous_total_cost=self._last_total_cost,
                 )
             else:
                 observation = self._get_observation()
@@ -213,8 +218,14 @@ class DroneTrajectoryEnv(Env):
         # Simulate up to the inserted single waypoint
         self._simulate_segment_to_waypoint(waypoint)
 
+        previous_total_cost = float(self._last_total_cost)
+        self._previous_total_cost = previous_total_cost
+
         costs = self._calculate_costs()
-        reward = -float(costs['total_cost'])
+        total_cost = float(costs['total_cost'])
+        incremental_cost = total_cost - previous_total_cost
+        reward = -incremental_cost
+        self._last_total_cost = total_cost
 
         terminated = False
         truncated = False
@@ -239,7 +250,8 @@ class DroneTrajectoryEnv(Env):
                 forced_speed=float(action[self.speed_index]),
                 stopped_by_agent=False,
                 last_waypoint=waypoint,
-                cached_costs=costs
+                cached_costs=costs,
+                previous_total_cost=previous_total_cost,
             )
         
         self.return_value += reward
@@ -260,7 +272,8 @@ class DroneTrajectoryEnv(Env):
             forced_speed=default_speed,
             stopped_by_agent=True,
             last_waypoint=None,
-            cached_costs={"total_cost": 0.0}
+            cached_costs={"total_cost": 0.0},
+            previous_total_cost=0.0,
         )
     
     def run_specific_waypoints_episode(self, waypoints):
@@ -276,20 +289,32 @@ class DroneTrajectoryEnv(Env):
             drone_position = self.simulation.drone.state['pos']
             reached_goal = np.linalg.norm(drone_position - self.final_target) <= self.termination_distance
             if reached_goal:
+                previous_total = float(self._last_total_cost)
+                self._previous_total_cost = previous_total
+                costs = self._calculate_costs()
+                self._last_total_cost = float(costs.get('total_cost', previous_total))
                 return self._finalize_episode(
                     reached_goal=True,
                     exhausted_budget=False,
                     forced_speed=float(waypoint['v']),
                     stopped_by_agent=False,
                     last_waypoint=waypoint,
+                    cached_costs=costs,
+                    previous_total_cost=previous_total,
                 )
 
+        previous_total = float(self._last_total_cost)
+        self._previous_total_cost = previous_total
+        costs = self._calculate_costs() if waypoints else {"total_cost": 0.0}
+        self._last_total_cost = float(costs.get('total_cost', previous_total))
         return self._finalize_episode(
             reached_goal=False,
             exhausted_budget=True,
             forced_speed=float(waypoints[-1]['v']) if waypoints else self._default_terminal_speed(),
             stopped_by_agent=False,
             last_waypoint=waypoints[-1] if waypoints else None,
+            cached_costs=costs,
+            previous_total_cost=previous_total,
         )
 
     def _calculate_costs(self, include_uncompletition_penalty: bool = False) -> dict:
@@ -334,9 +359,13 @@ class DroneTrajectoryEnv(Env):
         stopped_by_agent,
         last_waypoint,
         cached_costs,
+        previous_total_cost=None,
     ):
         """Assemble the terminal transition and associated bookkeeping."""
         cached_costs = cached_costs or {"total_cost": 0.0}
+        if previous_total_cost is None:
+            previous_total_cost = self._previous_total_cost
+        previous_total_cost = float(previous_total_cost)
         print("Cached costs:", cached_costs)
         # print(f"[{self.current_episode}] Finalizing episode...")
         if reached_goal:
@@ -348,8 +377,11 @@ class DroneTrajectoryEnv(Env):
             # print(f"[{self.current_episode}] Goal reached before budget exhaustion.")
             costs = self._normalise_cost_dict(cached_costs)
             total_cost = float(costs['total_cost'])
-            reward = -total_cost
-            print("Goal reached total reward:", reward)
+            incremental_cost = total_cost - previous_total_cost
+            reward = -incremental_cost
+            self._previous_total_cost = total_cost
+            self._last_total_cost = total_cost
+            print("Goal reached incremental reward:", reward)
         else:
             # If the budget is exhausted without reaching the goal, append the final target and simulate to it.
             final_wp = self._ensure_final_target_present(speed=forced_speed, run_simulation=True)
@@ -357,13 +389,17 @@ class DroneTrajectoryEnv(Env):
             costs = self._calculate_costs()
 
             total_cost = float(costs['total_cost'])
-            reward = -total_cost
-            incremental_cost = total_cost - float(cached_costs.get('total_cost', 0.0))
+            cached_total = float(cached_costs.get('total_cost', previous_total_cost))
+            incremental_cost = total_cost - cached_total
+            reward = -incremental_cost
+            previous_total_cost = cached_total
+            self._previous_total_cost = cached_total
+            self._last_total_cost = total_cost
             print(
-                "Budget exhausted total reward:",
+                "Budget exhausted incremental reward:",
                 reward,
                 "composed by cached costs:",
-                cached_costs.get('total_cost', 0.0),
+                cached_total,
                 "and final step costs:",
                 incremental_cost,
             )
