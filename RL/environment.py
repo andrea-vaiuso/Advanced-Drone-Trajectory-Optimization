@@ -62,6 +62,7 @@ class DroneTrajectoryEnv(Env):
         self.max_waypoints = int(max_waypoints)
         self.termination_distance = float(termination_distance)
         self.cost_parameters = cost_parameters or {}
+        self.current_episode = 0
 
         raw_low = np.array(action_bounds.get("low", [-250.0, -250.0, -250.0, 2.0]), dtype=float)
         raw_high = np.array(action_bounds.get("high", [250.0, 250.0, 250.0, 20.0]), dtype=float)
@@ -106,39 +107,44 @@ class DroneTrajectoryEnv(Env):
 
         self.current_waypoints = []
         self.next_candidate_index = 0
-        self._needs_reset = True
         self.last_episode_data = None
+        
+        self.rewards_history = []
+        self.return_value = 0
 
     # ------------------------------------------------------------------
     # Gymnasium API
     # ------------------------------------------------------------------
     def reset(self, *, seed=None, options=None):  # type: ignore[override]
-        """Reset the simulator state and return the initial observation."""
+        """Reset the simulator state and return the initial observation in the end of an episode."""
         super().reset(seed=seed)
         del options  # unused
 
+        self.current_episode += 1
         self.current_waypoints = []
         self.next_candidate_index = 0
-        self._needs_reset = True
         self.last_episode_data = None
 
         # Restore simulation state to the initial conditions
-        self.simulation._clear_histories()  # type: ignore[attr-defined]
+        self.simulation.clear_histories()  # type: ignore[attr-defined]
         self.simulation.drone.reset_state()
         self.simulation.drone.state['pos'] = self.start_point.copy()
         self.simulation.drone.init_state['pos'] = self.start_point.copy()
         self.simulation.current_seg_idx = 0
         self.simulation.waypoints = []
+        self.return_value = 0
+        self.rewards_history = []
 
         observation = self._get_observation()
         info = {}
         return observation, info
+    
 
     def step(self, action: np.ndarray):  # type: ignore[override]
         """Apply an action and advance the environment by one waypoint step.
 
         Args:
-            action: A numpy array of shape (4,) or (5,) representing the action to be taken.
+            action: The action to apply in the current step. It is expected to be a NumPy array of shape (4,) or (5,).
         Returns:
             observation: The next observation of the environment.
             reward: The reward obtained from taking the action.
@@ -148,12 +154,12 @@ class DroneTrajectoryEnv(Env):
         """
         action = np.clip(action, self.low_action, self.high_action).astype(float)
 
-        if not self._should_use_waypoint(action):
+        if self._should_skip_waypoint(action):
+            # Behaviour when skipping the current waypoint
             skipped_index = self.next_candidate_index
             self.next_candidate_index += 1
-
-            costs = self._calculate_costs()
-            reward = -float(costs['total_cost'])
+            reward = 0.0
+            costs = {'total_cost': 0.0}
 
             info = {
                 'costs': costs,
@@ -173,35 +179,43 @@ class DroneTrajectoryEnv(Env):
             )
             exhausted_candidates = self.next_candidate_index >= self.max_waypoints
 
+
             if reached_goal or exhausted_candidates:
                 last_wp = self.current_waypoints[-1] if self.current_waypoints else None
                 return self._finalize_episode(
                     reached_goal=reached_goal,
+                    exhausted_budget=exhausted_candidates,
                     forced_speed=float(action[self.speed_index])
                     if last_wp is None
                     else float(last_wp['v']),
                     stopped_by_agent=False,
                     last_waypoint=last_wp,
-                    cached_costs=costs if reached_goal else None,
+                    cached_costs=costs
                 )
+            else:
+                observation = self._get_observation()
+                self.return_value += reward
+                self.rewards_history.append(reward)
+                # print(f"[STEP {self.current_episode}] Skipping waypoint index", skipped_index, f", reward = {reward:.3f}, total return = {self.return_value:.3f}")
+                return observation, reward, terminated, truncated, info
 
-            observation = self._get_observation()
-            return observation, reward, terminated, truncated, info
-
+        # Behaviour when inserting the current waypoint
+        # Get the absolute waypoint from the action
         waypoint = self._build_waypoint(action, self.next_candidate_index)
         self.current_waypoints.append(waypoint)
+        # Simulate up to the inserted single waypoint
         self.simulation.waypoints = [deepcopy(waypoint)]
         self.simulation.current_seg_idx = 0
+        # Clear histories to avoid interference from previous segments
+        self.simulation.clear_histories()
 
-        reset_state = self._needs_reset
-        self._needs_reset = False
-
+        # There is a problem here. Using single waypoint simulation causes the drone to slow down because is considered as final target (in the full simulation it would continue to the next waypoint).
+        # Possible solution: create a dummy waypoint far away in the same direction after the current waypoint to simulate continuous flight and stop the simulation when reaching the current waypoint.
         self.simulation.startSimulation(
             stop_at_target=True,
             verbose=False,
             stop_sim_if_not_moving=True,
             use_static_target=False,
-            reset_drone_state=reset_state,
         )
 
         costs = self._calculate_costs()
@@ -221,17 +235,21 @@ class DroneTrajectoryEnv(Env):
         drone_position = self.simulation.drone.state['pos']
         reached_goal = np.linalg.norm(drone_position - self.final_target) <= self.termination_distance
         exhausted_budget = self.next_candidate_index >= self.max_waypoints
+        observation = self._get_observation()
 
         if reached_goal or exhausted_budget:
             return self._finalize_episode(
                 reached_goal=reached_goal,
+                exhausted_budget=exhausted_budget,
                 forced_speed=float(action[self.speed_index]),
                 stopped_by_agent=False,
                 last_waypoint=waypoint,
-                cached_costs=costs if reached_goal else None,
+                cached_costs=costs
             )
-
-        observation = self._get_observation()
+        
+        self.return_value += reward
+        self.rewards_history.append(reward)
+        # print(f"[STEP {self.current_episode}] Waypoint {self.next_candidate_index}, reward = {reward:.3f}, total return = {self.return_value:.3f}")
         return observation, reward, terminated, truncated, info
 
     # ------------------------------------------------------------------
@@ -243,9 +261,11 @@ class DroneTrajectoryEnv(Env):
         default_speed = self._default_terminal_speed()
         return self._finalize_episode(
             reached_goal=False,
+            exhausted_budget=True,
             forced_speed=default_speed,
             stopped_by_agent=True,
             last_waypoint=None,
+            cached_costs={"total_cost": 0.0}
         )
     
     def run_specific_waypoints_episode(self, waypoints):
@@ -259,15 +279,13 @@ class DroneTrajectoryEnv(Env):
             self.simulation.waypoints = [deepcopy(waypoint)]
             self.simulation.current_seg_idx = 0
 
-            reset_state = self._needs_reset
-            self._needs_reset = False
 
             self.simulation.startSimulation(
                 stop_at_target=True,
                 verbose=False,
                 stop_sim_if_not_moving=True,
                 use_static_target=False,
-                reset_drone_state=reset_state,
+                reset_drone_state=True,
             )
 
             drone_position = self.simulation.drone.state['pos']
@@ -275,6 +293,7 @@ class DroneTrajectoryEnv(Env):
             if reached_goal:
                 return self._finalize_episode(
                     reached_goal=True,
+                    exhausted_budget=False,
                     forced_speed=float(waypoint['v']),
                     stopped_by_agent=False,
                     last_waypoint=waypoint,
@@ -282,6 +301,7 @@ class DroneTrajectoryEnv(Env):
 
         return self._finalize_episode(
             reached_goal=False,
+            exhausted_budget=True,
             forced_speed=float(waypoints[-1]['v']) if waypoints else self._default_terminal_speed(),
             stopped_by_agent=False,
             last_waypoint=waypoints[-1] if waypoints else None,
@@ -302,8 +322,8 @@ class DroneTrajectoryEnv(Env):
         position = reference + offset
         return self._build_absolute_waypoint(position, float(action[self.speed_index]))
 
-    def _should_use_waypoint(self, action: np.ndarray) -> bool:
-        """Return ``True`` when the action selects the current waypoint."""
+    def _should_skip_waypoint(self, action: np.ndarray) -> bool:
+        """Return ``True`` when the action skips the current waypoint."""
 
         if self.selection_gate_index is None:
             return True
@@ -313,23 +333,34 @@ class DroneTrajectoryEnv(Env):
     def _finalize_episode(
         self,
         reached_goal,
+        exhausted_budget,
         forced_speed,
         stopped_by_agent,
         last_waypoint,
-        cached_costs=None,
+        cached_costs,
     ):
         """Assemble the terminal transition and associated bookkeeping."""
+        print("Cached costs:", cached_costs)
+        # print(f"[{self.current_episode}] Finalizing episode...")
         if reached_goal:
+            # If the goal is reached already, just ensure the final target is present without simulating.
             final_wp = self._ensure_final_target_present(
                 speed=(last_waypoint['v'] if last_waypoint else forced_speed),
                 run_simulation=False,
             )
-            costs = cached_costs if cached_costs is not None else self._calculate_costs()
-            reward = -float(costs['total_cost'])
+            # print(f"[{self.current_episode}] Goal reached before budget exhaustion.")
+            total_cost = float(cached_costs['total_cost'])
+            reward = -float(total_cost)
+            print("Goal reached total reward:", reward)
         else:
+            # If the budget is exhausted without reaching the goal, append the final target and simulate to it.
             final_wp = self._ensure_final_target_present(speed=forced_speed, run_simulation=True)
+            # print(f"[{self.current_episode}] Budget exhausted before reaching goal; simulating to final target.")
             costs = self._calculate_costs()
-            reward = -float(costs['total_cost'])
+
+            total_cost = float(costs['total_cost']) + float(cached_costs['total_cost'])  if cached_costs is not None else float(costs['total_cost'])
+            reward = -float(total_cost)
+            print("Budget exhausted total reward:", reward, "composed by cached costs:", cached_costs['total_cost'], "and final step costs:", costs['total_cost'])
 
         info = {
             'costs': costs,
@@ -345,6 +376,9 @@ class DroneTrajectoryEnv(Env):
             'costs': {k: float(v) for k, v in costs.items()},
         }
         info['episode_data'] = deepcopy(self.last_episode_data)
+        self.return_value += reward
+        self.rewards_history.append(reward)
+        print(f"[Episode: {self.current_episode}] Return: {self.return_value:.3f}, Rewards: {[str(round(rew, 3)) if rew != 0 else '' for rew in self.rewards_history]}")
 
         observation = self._get_observation()
         terminated = True
@@ -365,17 +399,15 @@ class DroneTrajectoryEnv(Env):
         final_wp = self._build_absolute_waypoint(self.final_target, float(base_speed))
 
         if run_simulation:
-            reset_state = self._needs_reset
             self.simulation.waypoints = [deepcopy(final_wp)]
             self.simulation.current_seg_idx = 0
+            self.simulation.clear_histories()
             self.simulation.startSimulation(
                 stop_at_target=True,
                 verbose=False,
                 stop_sim_if_not_moving=True,
                 use_static_target=False,
-                reset_drone_state=reset_state,
             )
-            self._needs_reset = False
 
         self.current_waypoints.append(final_wp)
         return final_wp

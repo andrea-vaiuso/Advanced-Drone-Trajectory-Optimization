@@ -126,7 +126,7 @@ class Simulation:
         """
         Start the simulation of the drone following dynamic or static targets along the waypoints.
         Parameters:
-            stop_at_target (bool): If True, stop when the final target is reached.
+            stop_at_target (bool): If True, the simulation is stopped when the final target is reached.
             verbose (bool): If True, print simulation progress and completion messages.
             stop_sim_if_not_moving (bool): If True, stop simulation if the drone is not moving for a certain period.
             use_static_target (bool): If True, use ``compute_static_target`` instead of dynamic targeting.
@@ -138,7 +138,7 @@ class Simulation:
         
         if reset_drone_state:
             # Clear previous histories
-            self._clear_histories()
+            self.clear_histories()
             # Reset drone state to initial conditions
             self.drone.reset_state()
             self.current_seg_idx = 0
@@ -405,7 +405,7 @@ class Simulation:
 
         return seg_end, current_seg_idx, seg_end
     
-    def _clear_histories(self):
+    def clear_histories(self):
         """
         Clear all histories collected during the simulation.
         This method resets all data collections to empty lists.

@@ -12,8 +12,8 @@ max_waypoints: 10
 termination_distance: 5.0
 
 action_bounds:
-  low: [-20.0, -45.0, 0.0, 10.0]
-  high: [20.0, 45.0, 30.0, 20.0]
+  low:  [ -20.0, -45.0,   0.0,  10.0]
+  high: [  20.0,  45.0,  30.0,  20.0]
 
 cost_parameters:
   # Weight applied to time taken; increasing encourages faster routes but may sacrifice energy efficiency or noise reduction.
