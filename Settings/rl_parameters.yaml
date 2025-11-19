@@ -11,6 +11,10 @@ max_waypoints: 10
 # Euclidean distance (meters) from the target considered successful; shrinking the threshold demands higher precision before stopping.
 termination_distance: 5.0
 
+# Negative reward added every time the agent skips a waypoint; discourages
+# policies from abusing discounting without improving the path cost.
+skip_penalty: -1.0
+
 action_bounds:
   low: [-500.0, -500.0, -350.0, 10.0]
   high: [500.0, 500.0, 350.0, 20.0]
