@@ -4,9 +4,11 @@ import json
 import os
 from math import isclose
 
+import numpy as np
 import yaml
+from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.vec_env import DummyVecEnv
-from stable_baselines3 import SAC
+from stable_baselines3 import SAC, TD3
 
 from Drone.Simulation import Simulation
 from Optimizations.optimizer import Optimizer
@@ -147,6 +149,21 @@ class BaseRLTrainer(Optimizer):
         finally:
             env.close()
 
+    def _evaluate_policy(self, model, env_factory, episodes: int) -> None:
+        """Evaluate the deterministic policy for the requested number of episodes."""
+        for _ in range(episodes):
+            env = env_factory()
+            obs, _ = env.reset()
+            done = False
+            truncated = False
+            while not (done or truncated):
+                action, _ = model.predict(obs, deterministic=True)
+                obs, _, done, truncated, info = env.step(action)
+            episode_data = info.get("episode_data")
+            if episode_data:
+                self.record_episode(episode_data)
+            env.close()
+
     def record_episode(self, episode_data) -> None:
         """Store an episode summary and update best-trajectory bookkeeping."""
         total_cost = float(episode_data["total_cost"])
@@ -268,21 +285,6 @@ class SACTrajectoryTrainer(BaseRLTrainer):
 
         return self.best_trajectory
 
-    def _evaluate_policy(self, model: SAC, env_factory, episodes: int) -> None:
-        """Evaluate the deterministic policy for the requested number of episodes."""
-        for _ in range(episodes):
-            env = env_factory()
-            obs, _ = env.reset()
-            done = False
-            truncated = False
-            while not (done or truncated):
-                action, _ = model.predict(obs, deterministic=True)
-                obs, _, done, truncated, info = env.step(action)
-            episode_data = info.get("episode_data")
-            if episode_data:
-                self.record_episode(episode_data)
-            env.close()
-
     def _build_sac_kwargs(self, env: DummyVecEnv):
         """Translate the YAML configuration into SAC constructor arguments."""
         policy = self.rl_config.get("policy", "MlpPolicy")
@@ -304,4 +306,90 @@ class SACTrajectoryTrainer(BaseRLTrainer):
         }
         if self.rl_config.get("policy_kwargs"):
             kwargs["policy_kwargs"] = self.rl_config["policy_kwargs"]
+        return kwargs
+
+
+class TD3TrajectoryTrainer(BaseRLTrainer):
+    """Trainer that leverages Stable-Baselines3 TD3."""
+
+    def __init__(self, config_file, verbose=True, specific_waypoints=None, run_zero_waypoint_episode=True) -> None:
+        super().__init__(config_file, verbose)
+        self.specific_waypoints = specific_waypoints
+        self.run_zero_waypoint_episode = run_zero_waypoint_episode
+        self.env_factory = self._build_env_factory()
+        self.environment = self.env_factory()
+
+    def optimize(self):  # type: ignore[override]
+        env_factory = self.env_factory
+        if self.run_zero_waypoint_episode:
+            self._run_zero_waypoint_episode(env_factory)
+        if self.specific_waypoints is not None:
+            self._run_specific_waypoint_episode(env_factory, self.specific_waypoints)
+
+        train_env = DummyVecEnv([env_factory])
+
+        td3_kwargs = self._build_td3_kwargs(train_env)
+        model = TD3(**td3_kwargs)
+        self.model = model
+
+        callback = RLEpisodeLogger(self)
+        total_timesteps = int(self.rl_config.get("total_timesteps", 10_000))
+        log_interval = self.rl_config.get("log_interval", 1)
+
+        try:
+            model.learn(total_timesteps=total_timesteps, callback=callback, log_interval=log_interval)
+        finally:
+            train_env.close()
+
+        if self.study_dir:
+            model_path = os.path.join(self.study_dir, "td3_model")
+            model.save(model_path)
+            print(f"{self.get_alg_prefix()} Model saved to {model_path}")
+
+        eval_episodes = int(self.rl_config.get("evaluation_episodes", 3))
+        if eval_episodes > 0:
+            self._evaluate_policy(model, env_factory, eval_episodes)
+
+        return self.best_trajectory
+
+    def _build_td3_kwargs(self, env: DummyVecEnv):
+        """Translate the YAML configuration into TD3 constructor arguments."""
+        policy = self.rl_config.get("policy", "MlpPolicy")
+        kwargs = {
+            "policy": policy,
+            "env": env,
+            "learning_rate": self.rl_config.get("learning_rate", 1e-3),
+            "buffer_size": int(self.rl_config.get("buffer_size", 1_000_000)),
+            "batch_size": int(self.rl_config.get("batch_size", 256)),
+            "tau": self.rl_config.get("tau", 0.005),
+            "gamma": self.rl_config.get("gamma", 0.99),
+            "train_freq": self.rl_config.get("train_freq", 1),
+            "gradient_steps": self.rl_config.get("gradient_steps", -1),
+            "learning_starts": int(self.rl_config.get("learning_starts", 100)),
+            "policy_delay": int(self.rl_config.get("policy_delay", 2)),
+            "target_policy_noise": self.rl_config.get("target_policy_noise", 0.2),
+            "target_noise_clip": self.rl_config.get("target_noise_clip", 0.5),
+            "device": self.rl_config.get("device", "auto"),
+        }
+
+        action_noise_cfg = self.rl_config.get("action_noise")
+        if action_noise_cfg:
+            action_dim = env.action_space.shape[-1]
+            mu = action_noise_cfg.get("mu")
+            sigma = action_noise_cfg.get("sigma")
+            if mu is None:
+                mu = [0.0] * action_dim
+            if sigma is None:
+                sigma = [0.1] * action_dim
+            mu_arr = np.array(mu, dtype=float).reshape(-1)
+            sigma_arr = np.array(sigma, dtype=float).reshape(-1)
+            if mu_arr.size != action_dim:
+                mu_arr = np.full(action_dim, mu_arr.item() if mu_arr.size == 1 else 0.0)
+            if sigma_arr.size != action_dim:
+                sigma_arr = np.full(action_dim, sigma_arr.item() if sigma_arr.size == 1 else 0.1)
+            kwargs["action_noise"] = NormalActionNoise(mean=mu_arr, sigma=sigma_arr)
+
+        if self.rl_config.get("policy_kwargs"):
+            kwargs["policy_kwargs"] = self.rl_config["policy_kwargs"]
+
         return kwargs

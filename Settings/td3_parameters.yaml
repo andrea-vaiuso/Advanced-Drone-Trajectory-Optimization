@@ -1,0 +1,42 @@
+# Configuration for training the TD3 waypoint planner.
+algorithm_name: "TD3"
+set_initial_obs: true
+simulation_parameters_file: "Settings/simulation_parameters.yaml"
+
+# Environment settings
+max_waypoints: 10
+termination_distance: 5.0
+
+action_bounds:
+  low: [-500.0, -500.0, -350.0, 10.0]
+  high: [500.0, 500.0, 350.0, 20.0]
+
+cost_parameters:
+  time_weight: 1
+  altitude_weight: 0.01
+  power_weight: 0.0001
+  noise_weight: 50.0
+  completion_weight: 1000
+  save_costs_in_history: false
+
+# TD3 hyperparameters
+total_timesteps: 10000
+learning_rate: 0.001
+buffer_size: 50000
+batch_size: 256
+gamma: 0.99
+tau: 0.005
+train_freq: 1
+gradient_steps: 1
+learning_starts: 100
+policy_delay: 2
+target_policy_noise: 0.2
+target_noise_clip: 0.5
+policy: "MlpPolicy"
+log_interval: 1
+device: "cuda"
+evaluation_episodes: 5
+
+action_noise:
+  mu: 0.0
+  sigma: 0.1
