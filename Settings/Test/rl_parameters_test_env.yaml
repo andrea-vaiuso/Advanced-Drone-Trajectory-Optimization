@@ -43,13 +43,13 @@ buffer_size: 100000
 batch_size: 256
 
 # Number of collected steps before the agent starts training; increasing allows a larger initial buffer for more stable learning.
-learning_starts: 10000
+learning_starts: 1000
 
 # Discount factor for future rewards; values closer to 1 favour long-term planning while smaller values emphasise immediate costs.
 gamma: 0.99
 
 # Polyak averaging coefficient for target network updates; lowering tau produces slower, more stable target updates.
-tau: 0.005 
+tau: 0.9 
 
 # Frequency (in environment steps) of gradient updates; increasing trains more often but raises compute cost.
 train_freq: 1
@@ -61,12 +61,12 @@ gradient_steps: 1
 ent_coef: "auto_0.1"
 
 # Target entropy for automatic entropy tuning; higher (less negative) values encourage more exploration.
-target_entropy: -2.0
+target_entropy: -3
 
 # Interval (in gradient steps) between target network synchronisations; larger values reduce updates but can slow convergence.
 target_update_interval: 1
 
-# Policy architecture identifier used by Stable-Baselines3; switching to custom networks can better match state dimensionality.
+# Policy architecture identifier used by Stable-Baselines3; switching to custom networks can better match state dimensionality. # Options: "MlpPolicy", "CnnPolicy", "MultiInputPolicy"
 policy: "MlpPolicy"
 
 # Logging frequency in training steps; higher numbers slow console spam while lower values aid debugging by reporting often.
@@ -76,4 +76,4 @@ log_interval: 1
 device: "cuda"
 
 # Number of deterministic evaluation rollouts performed after training; increasing produces smoother validation statistics.
-evaluation_episodes: 5 
+evaluation_episodes: 40
