@@ -55,6 +55,7 @@ class DroneTrajectoryEnv(Env):
         termination_distance: float,
         cost_parameters: dict = None,
         skipping_enabled: bool = True,
+        skip_penalty: float = 0.0,
     ):
         super().__init__()
         self.simulation = simulation
@@ -118,6 +119,7 @@ class DroneTrajectoryEnv(Env):
         self._episode_cost_breakdown = {}
 
         self.skipping_enabled = bool(skipping_enabled)
+        self.skip_penalty = float(skip_penalty)
 
     # ------------------------------------------------------------------
     # Gymnasium API
@@ -172,20 +174,13 @@ class DroneTrajectoryEnv(Env):
         action = np.clip(action, self.low_action, self.high_action).astype(float)
 
         if self._should_skip_waypoint(action) and self.skipping_enabled:
-            # Behaviour when skipping the current waypoint
             skipped_index = self.next_candidate_index
             self.next_candidate_index += 1
-            reward = 0.0
-            costs = self._current_cost_totals()
-
-            info = {
-                'costs': costs,
-                'waypoint': None,
-                'trajectory': deepcopy(self.current_waypoints),
-                'stopped_by_agent': False,
-                'skipped_waypoint_index': skipped_index,
-                'skipped_waypoint': True,
-            }
+            baseline_waypoint = self._build_baseline_waypoint(skipped_index, float(action[self.speed_index]))
+            self._simulate_segment_to_waypoint(baseline_waypoint)
+            segment_costs = self._calculate_costs()
+            reward = -float(segment_costs.get('total_cost', 0.0)) + self.skip_penalty
+            aggregated_costs = self._accumulate_costs(segment_costs)
 
             terminated = False
             truncated = False
@@ -196,6 +191,18 @@ class DroneTrajectoryEnv(Env):
             )
             exhausted_candidates = self.next_candidate_index >= self.max_waypoints
 
+            info = {
+                'costs': aggregated_costs,
+                'waypoint': None,
+                'trajectory': deepcopy(self.current_waypoints),
+                'stopped_by_agent': False,
+                'skipped_waypoint_index': skipped_index,
+                'skipped_waypoint': True,
+                'skip_penalty': self.skip_penalty,
+            }
+
+            self.return_value += reward
+            self.rewards_history.append(reward)
 
             if reached_goal or exhausted_candidates:
                 last_wp = self.current_waypoints[-1] if self.current_waypoints else None
@@ -210,9 +217,9 @@ class DroneTrajectoryEnv(Env):
                     segment_costs=None,
                     segment_reward=reward,
                 )
-            else:
-                observation = self._get_observation()
-                return observation, reward, terminated, truncated, info
+
+            observation = self._get_observation()
+            return observation, reward, terminated, truncated, info
 
         # Behaviour when inserting the current waypoint
         # Get the absolute waypoint from the action
@@ -316,7 +323,11 @@ class DroneTrajectoryEnv(Env):
             segment_reward=last_segment_reward if segment_costs else 0.0,
         )
 
-    def _calculate_costs(self, include_uncompletition_penalty: bool = False) -> dict:
+    def _calculate_costs(
+        self,
+        include_uncompletition_penalty: bool = False,
+        simulation_override: Optional[Simulation] = None,
+    ) -> dict:
         """Return the current cost metrics computed by the shared evaluator.
 
         Args:
@@ -324,6 +335,9 @@ class DroneTrajectoryEnv(Env):
                 defined in ``cost_parameters`` is preserved, otherwise it is
                 forced to zero so that partial rollouts do not get penalised
                 for stopping early.
+            simulation_override: Optional simulation instance to read metrics
+                from. When ``None`` the interactive environment simulation is
+                used.
 
         Returns:
             A dictionary of scalar cost components keyed by their descriptive
@@ -332,7 +346,8 @@ class DroneTrajectoryEnv(Env):
         kwargs = dict(self.cost_parameters)
         kwargs.setdefault('save_costs_in_history', False)
         if not include_uncompletition_penalty: kwargs["completion_weight"] = 0.0
-        result = self.cost_evaluator.calculate_costs(**kwargs, alternative_simulation=self.simulation)
+        simulation = simulation_override if simulation_override is not None else self.simulation
+        result = self.cost_evaluator.calculate_costs(**kwargs, alternative_simulation=simulation)
         return self._normalise_cost_dict(result)
 
     def _accumulate_costs(self, segment_costs: dict) -> dict:
@@ -360,6 +375,11 @@ class DroneTrajectoryEnv(Env):
         offset = action[:3]
         position = reference + offset
         return self._build_absolute_waypoint(position, float(action[self.speed_index]))
+
+    def _build_baseline_waypoint(self, index: int, speed: float):
+        """Return the neutral waypoint for the given index and cruise speed."""
+        reference = self._get_reference_point(index)
+        return self._build_absolute_waypoint(reference, speed)
 
     def _should_skip_waypoint(self, action: np.ndarray) -> bool:
         """Return ``True`` when the action skips the current waypoint."""

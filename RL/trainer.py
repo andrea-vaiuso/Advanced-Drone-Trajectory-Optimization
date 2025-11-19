@@ -81,8 +81,8 @@ class BaseRLTrainer(Optimizer):
             world = World.load_world(world_path)
         else:
             grid_size = int(params.get("grid_size", 10))
-            max_world_size = int(params.get("max_world_size", 1000))
-            world = World(grid_size=grid_size, max_world_size=max_world_size)
+            world_size = int(params.get("max_world_size", 1000))
+            world = World(grid_size=grid_size, world_size=world_size)
         noise_model = load_dnn_noise_model(params)
         simulation = Simulation(
             drone=drone,
@@ -109,6 +109,7 @@ class BaseRLTrainer(Optimizer):
         def _factory():
             simulation = self._create_simulation()
             cost_evaluator = CostEvaluator(simulation, name=f"{self.opt_method_name}_COST", mkdirs=False)
+            skip_penalty = float(self.rl_config.get("skip_penalty", -1.0))
             env = DroneTrajectoryEnv(
                 simulation=simulation,
                 cost_evaluator=cost_evaluator,
@@ -118,6 +119,7 @@ class BaseRLTrainer(Optimizer):
                 action_bounds=action_bounds,
                 termination_distance=termination_distance,
                 cost_parameters=self.cost_parameters,
+                skip_penalty=skip_penalty,
             )
             return env
 
