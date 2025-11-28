@@ -6,14 +6,14 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from Worlds.World import World
 
 # ----------------- controls -----------------
-mode = "3d"          # "2d", "3d", or "both"
+mode = "3d"           # "2d", "3d", or "both"
 fps  = 550            # frames per second
 save = False          # True to save mp4/gif
 out_prefix = "trajectories"
-frame_skip = 10
+frame_skip = 1
 # --------------------------------------------
 
-log_file_path   = r"RL\SAC\20251118_085724\optimization_history_log.json"
+log_file_path   = r"RL\TD3\20251121_125929\optimization_history_log.json"
 world_file_path = "Worlds/training_world.pkl"
 
 interval_ms = max(1, int(1000 // max(1, fps)))

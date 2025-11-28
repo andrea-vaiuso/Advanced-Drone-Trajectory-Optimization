@@ -55,7 +55,7 @@ class DroneTrajectoryEnv(Env):
         termination_distance: float,
         cost_parameters: dict = None,
         skipping_enabled: bool = True,
-        skip_penalty: float = 0.0,
+        skip_penalty: float = -1.0,
     ):
         super().__init__()
         self.simulation = simulation
@@ -117,6 +117,7 @@ class DroneTrajectoryEnv(Env):
         self._segments_run = 0
         self._episode_cost_total = 0.0
         self._episode_cost_breakdown = {}
+        self._segment_cost_sum = 0.0
 
         self.skipping_enabled = bool(skipping_enabled)
         self.skip_penalty = float(skip_penalty)
@@ -146,6 +147,7 @@ class DroneTrajectoryEnv(Env):
         self._segments_run = 0
         self._episode_cost_total = 0.0
         self._episode_cost_breakdown = {}
+        self._segment_cost_sum = 0.0
 
         observation = self._get_observation()
         info = {}
@@ -179,6 +181,7 @@ class DroneTrajectoryEnv(Env):
             baseline_waypoint = self._build_baseline_waypoint(skipped_index, float(action[self.speed_index]))
             self._simulate_segment_to_waypoint(baseline_waypoint)
             segment_costs = self._calculate_costs()
+            self._segment_cost_sum += float(segment_costs.get("total_cost", 0.0))
             reward = -float(segment_costs.get('total_cost', 0.0)) + self.skip_penalty
             aggregated_costs = self._accumulate_costs(segment_costs)
 
@@ -229,6 +232,7 @@ class DroneTrajectoryEnv(Env):
         self._simulate_segment_to_waypoint(waypoint)
 
         segment_costs = self._calculate_costs()
+        self._segment_cost_sum += float(segment_costs.get("total_cost", 0.0))
         total_cost = float(segment_costs.get('total_cost', 0.0))
         reward = -total_cost
 
@@ -297,6 +301,7 @@ class DroneTrajectoryEnv(Env):
             drone_position = self.simulation.drone.state['pos']
             reached_goal = np.linalg.norm(drone_position - self.final_target) <= self.termination_distance
             segment_costs = self._calculate_costs()
+            self._segment_cost_sum += float(segment_costs.get("total_cost", 0.0))
             last_segment_costs = segment_costs
             last_segment_reward = -float(segment_costs.get('total_cost', 0.0))
             if reached_goal:
@@ -385,7 +390,7 @@ class DroneTrajectoryEnv(Env):
         """Return ``True`` when the action skips the current waypoint."""
 
         if self.selection_gate_index is None:
-            return True
+            return False
         gate_value = float(action[self.selection_gate_index])
         return gate_value > self.selection_threshold
 
@@ -411,12 +416,14 @@ class DroneTrajectoryEnv(Env):
                 speed=(last_waypoint['v'] if last_waypoint else forced_speed),
                 run_simulation=False,
             )
-            aggregated_costs = self._current_cost_totals()
         else:
-            final_wp = self._ensure_final_target_present(speed=forced_speed, run_simulation=True)
-            final_segment_costs = self._calculate_costs()
-            aggregated_costs = self._accumulate_costs(final_segment_costs)
-            final_reward += -float(final_segment_costs.get('total_cost', 0.0))
+            final_wp = self._ensure_final_target_present(speed=forced_speed, run_simulation=False)
+
+        full_costs = self._calculate_costs(include_uncompletition_penalty=True)
+        self._episode_cost_breakdown = {k: float(v) for k, v in full_costs.items()}
+        self._episode_cost_total = float(full_costs.get("total_cost", 0.0))
+        aggregated_costs = self._current_cost_totals()
+        final_reward = -self._episode_cost_total - self.return_value
 
         self.return_value += final_reward
         self.rewards_history.append(final_reward)
@@ -478,8 +485,9 @@ class DroneTrajectoryEnv(Env):
             reset_flag = bool(reset_drone_state)
 
         self.simulation.waypoints = [deepcopy(waypoint)]
-        self.simulation.current_seg_idx = 0
-        self.simulation.clear_histories()
+        if reset_flag:
+            self.simulation.current_seg_idx = 0
+            self.simulation.clear_histories()
         self.simulation.startSimulation(
             stop_at_target=True,
             verbose=False,
@@ -488,6 +496,24 @@ class DroneTrajectoryEnv(Env):
             reset_drone_state=reset_flag,
         )
         self._segments_run += 1
+
+    def _evaluate_full_trajectory(self, waypoints):
+        """Run a full rollout on the provided waypoints and return the costs."""
+        sim = self.cost_evaluator.simulation_object
+        sim.clear_histories()
+        sim.drone.reset_state()
+        sim.drone.state['pos'] = self.start_point.copy()
+        sim.drone.init_state['pos'] = self.start_point.copy()
+        sim.current_seg_idx = 0
+        sim.waypoints = list(deepcopy(waypoints))
+        sim.startSimulation(
+            stop_at_target=True,
+            verbose=False,
+            stop_sim_if_not_moving=True,
+            use_static_target=False,
+            reset_drone_state=True,
+        )
+        return self._calculate_costs(include_uncompletition_penalty=True, simulation_override=sim)
 
     @staticmethod
     def _normalise_cost_dict(costs: dict) -> dict:
@@ -543,6 +569,10 @@ class DroneTrajectoryEnv(Env):
             [float(self.max_waypoints - self.next_candidate_index)], dtype=np.float32
         )
         obs_components.append(steps_left)
+        delta_to_target = self.final_target.astype(np.float32) - np.asarray(state.get('pos', np.zeros(3)), dtype=np.float32)
+        obs_components.append(delta_to_target)
+        dist_to_target = np.float32(np.linalg.norm(delta_to_target))
+        obs_components.append(np.array([dist_to_target], dtype=np.float32))
         return np.concatenate(obs_components, dtype=np.float32)
 
     def _compute_state_dimension(self):
@@ -563,6 +593,8 @@ class DroneTrajectoryEnv(Env):
             np.asarray(dummy_state['ang_vel'], dtype=np.float32),
             np.asarray(dummy_state['rpm'], dtype=np.float32),
             np.array([float(dummy_state['thrust']), float(dummy_state['power'])], dtype=np.float32),
+            np.array([0.0], dtype=np.float32),
+            np.zeros(3, dtype=np.float32),
             np.array([0.0], dtype=np.float32),
         ]
         return int(np.sum([arr.size for arr in dummy_obs]))
@@ -657,8 +689,8 @@ class DroneTrajectoryEnv(Env):
         if np.any(per_waypoint_low > per_waypoint_high):
             raise ValueError(f"Inconsistent action bounds: some waypoint intervals are invalid: {per_waypoint_low[per_waypoint_low > per_waypoint_high]} > {per_waypoint_high[per_waypoint_low > per_waypoint_high]}")
 
-        low_action = np.max(per_waypoint_low, axis=0).astype(np.float32)
-        high_action = np.min(per_waypoint_high, axis=0).astype(np.float32)
+        low_action = np.min(per_waypoint_low, axis=0).astype(np.float32)
+        high_action = np.max(per_waypoint_high, axis=0).astype(np.float32)
 
         if np.any(low_action > high_action):
             raise ValueError(

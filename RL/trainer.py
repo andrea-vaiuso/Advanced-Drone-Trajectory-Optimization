@@ -41,15 +41,17 @@ class BaseRLTrainer(Optimizer):
 
         simulation = self._create_simulation()
 
-        opt_name = rl_cfg.get("algorithm_name", "SAC")
+        opt_name = rl_cfg.get("algorithm_name", "RL_Agent")
         super().__init__(
             simulation_object=simulation,
             opt_method_name=opt_name,
             config_file=config_file,
             verbose=verbose,
             set_initial_obs=rl_cfg.get("set_initial_obs", True),
+            mkdirs=False,
         )
         self.base_dir = os.path.join("RL", opt_name)
+        self.mkdirs = True
         os.makedirs(self.base_dir, exist_ok=True)
 
         self.last_time = 0.0

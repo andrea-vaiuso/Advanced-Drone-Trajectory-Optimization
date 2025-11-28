@@ -1,10 +1,10 @@
 # Simulation parameters
 dt: 0.008 # Time sampling for dynamic simulation
-simulation_time: 100 # seconds
+simulation_time: 300 # seconds
 frame_skip: 10 # Number of frames to skip for smoother animation
 threshold: 2.0  # Stop simulation threshold
 target_shift_threshold_distance: 5 # Shift to next segment threshold 
-noise_annoyance_radius: 15 # Radius for noise annoyance calculation in meters
+noise_annoyance_radius: 14 # Radius for noise annoyance calculation in meters
 
 max_rpm: 3000 # Maximum RPM for the motors
 n_rotors: 4 # Number of rotors
@@ -18,11 +18,11 @@ max_angle_limit_deg: 30.0
 anti_windup_contrib: 0.4
 
 # Trajectory parameters and World settings
-world_data_path: "Worlds/training_world.pkl"
-start_point: [5.0, 50.0, 1.0]
-end_point: [95.0, 50.0, 1.0]
+world_data_path: "Worlds/world_winterthur.pkl"
+start_point: [20.0, 20.0, 0.0]
+end_point: [950.0, 950.0, 10.0]
 n_intermediate_waypoints: 5
-waypoint_perturbation_range: 50.0
+waypoint_perturbation_range: 250.0
 
 # Rotor model parameters
 norm_params_path: "Rotor/normalization_params.pth"
@@ -36,6 +36,7 @@ k_pid_yaw: [0.5, 1e-06, 0.1]
 k_pid_hsp: [0.21751398283713122, 0.011190626363252196, 0.0]
 k_pid_vsp: [249.7994300660337, 129.48998830292263, 0.1614096922854895]
 
+
 # Drone parameters
 m: 5.2
 I: [3.8e-3, 3.8e-3, 7.1e-3]
@@ -44,6 +45,8 @@ l: 0.32
 Cd: [0.1, 0.1, 0.15]
 Ca: [0.1, 0.1, 0.15]
 Jr: 6e-5
+
+
 
 # Noise parameters
 dnn_model_filename: "Noise/lookup_noise_model.npy"

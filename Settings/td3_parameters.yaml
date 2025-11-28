@@ -1,42 +1,90 @@
-# Configuration for training the TD3 waypoint planner.
+# Name of the reinforcement learning algorithm used for waypoint perturbations; switching enables alternative SB3 agents.
 algorithm_name: "TD3"
+# When true the environment starts each episode from the deterministic baseline observation; disabling adds stochasticity to resets.
 set_initial_obs: true
+# Path to the simulation parameter file describing the drone, world and mission setup used by the RL environment.
 simulation_parameters_file: "Settings/simulation_parameters.yaml"
 
 # Environment settings
+# Maximum number of intermediate waypoints the agent may propose; lower values reduce planning flexibility but shorten episodes.
 max_waypoints: 10
+# Euclidean distance (meters) from the target considered successful; shrinking the threshold demands higher precision before stopping.
 termination_distance: 5.0
 
+# Negative reward added every time the agent skips a waypoint; discourages
+# policies from abusing discounting without improving the path cost.
+skip_penalty: -1.0
+
 action_bounds:
-  low: [-500.0, -500.0, -350.0, 10.0]
-  high: [500.0, 500.0, 350.0, 20.0]
+  low:  [ -20.0, -45.0,   0.0,  10.0]
+  high: [  20.0,  45.0,  30.0,  20.0]
 
 cost_parameters:
+  # Weight applied to time taken; increasing encourages faster routes but may sacrifice energy efficiency or noise reduction.
   time_weight: 1
+  # Weight applied to altitude rule violations; larger values punish flying too high more severely.
   altitude_weight: 0.01
+  # Weight applied to power consumption; increasing prioritises energy-efficient trajectories during learning.
   power_weight: 0.0001
+  # Weight applied to acoustic annoyance penalties; higher values force quieter, potentially longer, flight paths.
   noise_weight: 50.0
+  # Penalty for uncompleted missions; raising this value strongly discourages failure to reach the target.
   completion_weight: 1000
+  # Flag that determines whether each call stores intermediate cost metrics for later inspection.
   save_costs_in_history: false
 
-# TD3 hyperparameters
-total_timesteps: 10000
+# == RL hyperparameters ==
+
+# Total number of environment steps collected during training; more steps improve convergence at the cost of runtime.
+total_timesteps: 100000
+
+# Optimizer step size; raising the learning rate speeds up updates but risks instability, lowering makes training safer yet slower.
 learning_rate: 0.001
+
+# Maximum number of transitions kept in the replay buffer; larger buffers provide more diverse batches but use extra memory.
 buffer_size: 50000
+
+# Number of samples drawn per gradient update; larger batches stabilise training but require more memory per step.
 batch_size: 256
+
+# Number of collected steps before the agent starts training; increasing allows a larger initial buffer for more stable learning.
+learning_starts: 1000
+
+# Discount factor for future rewards; values closer to 1 favour long-term planning while smaller values emphasise immediate costs.
 gamma: 0.99
+
+# Polyak averaging coefficient for target network updates; lowering tau produces slower, more stable target updates.
 tau: 0.005
+
+# Frequency (in environment steps) of gradient updates; increasing trains more often but raises compute cost.
 train_freq: 1
+
+# Number of gradient steps performed at each training call; higher counts improve data efficiency but slow wall-clock time.
 gradient_steps: 1
-learning_starts: 100
-policy_delay: 2
-target_policy_noise: 0.2
-target_noise_clip: 0.5
+
+# Policy architecture identifier used by Stable-Baselines3; switching to custom networks can better match state dimensionality. # Options: "MlpPolicy", "CnnPolicy", "MultiInputPolicy"
 policy: "MlpPolicy"
+
+# Logging frequency in training steps; higher numbers slow console spam while lower values aid debugging by reporting often.
 log_interval: 1
+
+# Device used for training ("cpu", "cuda" or "auto"); selecting GPU accelerates training when available.
 device: "cuda"
-evaluation_episodes: 5
+
+# Number of deterministic evaluation rollouts performed after training; increasing produces smoother validation statistics.
+evaluation_episodes: 40
+
+# == TD3 Specific Parameters ==
+
+# Delay (in gradient steps) between policy updates; larger values stabilise training but slow policy improvement.
+policy_delay: 2
+# Standard deviation of Gaussian noise added to target policy during critic updates; larger values improve exploration but may destabilise training.
+target_policy_noise: 0.2
+# Limit for absolute value of target policy noise; clipping prevents extreme actions but may reduce exploration.
+target_noise_clip: 0.5
 
 action_noise:
+  # Gaussian noise parameters added to each action to encourage exploration during training.
   mu: 0.0
+  # Standard deviation of the Gaussian noise.
   sigma: 0.1

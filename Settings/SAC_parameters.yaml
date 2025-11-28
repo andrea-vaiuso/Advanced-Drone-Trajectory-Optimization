@@ -3,13 +3,17 @@ algorithm_name: "SAC"
 # When true the environment starts each episode from the deterministic baseline observation; disabling adds stochasticity to resets.
 set_initial_obs: true
 # Path to the simulation parameter file describing the drone, world and mission setup used by the RL environment.
-simulation_parameters_file: "Settings/Test/simulation_parameters_test_env.yaml"
+simulation_parameters_file: "Settings/simulation_parameters.yaml"
 
 # Environment settings
 # Maximum number of intermediate waypoints the agent may propose; lower values reduce planning flexibility but shorten episodes.
 max_waypoints: 10
 # Euclidean distance (meters) from the target considered successful; shrinking the threshold demands higher precision before stopping.
 termination_distance: 5.0
+
+# Negative reward added every time the agent skips a waypoint; discourages
+# policies from abusing discounting without improving the path cost.
+skip_penalty: -1.0
 
 action_bounds:
   low:  [ -20.0, -45.0,   0.0,  10.0]
@@ -29,15 +33,16 @@ cost_parameters:
   # Flag that determines whether each call stores intermediate cost metrics for later inspection.
   save_costs_in_history: false
 
-# SAC hyperparameters
+# == RL hyperparameters ==
+
 # Total number of environment steps collected during training; more steps improve convergence at the cost of runtime.
-total_timesteps: 200000
+total_timesteps: 100000
 
 # Optimizer step size; raising the learning rate speeds up updates but risks instability, lowering makes training safer yet slower.
-learning_rate: 0.0001 # 0.0003
+learning_rate: 0.001 # 0.0003
 
 # Maximum number of transitions kept in the replay buffer; larger buffers provide more diverse batches but use extra memory.
-buffer_size: 100000 
+buffer_size: 50000 
 
 # Number of samples drawn per gradient update; larger batches stabilise training but require more memory per step.
 batch_size: 256
@@ -49,22 +54,13 @@ learning_starts: 1000
 gamma: 0.99
 
 # Polyak averaging coefficient for target network updates; lowering tau produces slower, more stable target updates.
-tau: 0.9 
+tau: 0.005 
 
 # Frequency (in environment steps) of gradient updates; increasing trains more often but raises compute cost.
 train_freq: 1
 
 # Number of gradient steps performed at each training call; higher counts improve data efficiency but slow wall-clock time.
 gradient_steps: 1
-
-# Entropy regularisation coefficient; setting to "auto" lets SAC tune exploration, while manual values fix exploration pressure.
-ent_coef: "auto_0.1"
-
-# Target entropy for automatic entropy tuning; higher (less negative) values encourage more exploration.
-target_entropy: -3
-
-# Interval (in gradient steps) between target network synchronisations; larger values reduce updates but can slow convergence.
-target_update_interval: 1
 
 # Policy architecture identifier used by Stable-Baselines3; switching to custom networks can better match state dimensionality. # Options: "MlpPolicy", "CnnPolicy", "MultiInputPolicy"
 policy: "MlpPolicy"
@@ -77,3 +73,12 @@ device: "cuda"
 
 # Number of deterministic evaluation rollouts performed after training; increasing produces smoother validation statistics.
 evaluation_episodes: 40
+
+# == SAC Specific Parameters ==
+
+# Entropy regularisation coefficient; setting to "auto" lets SAC tune exploration, while manual values fix exploration pressure.
+ent_coef: "auto_0.1"
+# Target entropy for automatic entropy tuning; higher (less negative) values encourage more exploration.
+target_entropy: -2
+# Interval (in gradient steps) between target network synchronisations; larger values reduce updates but can slow convergence.
+target_update_interval: 1

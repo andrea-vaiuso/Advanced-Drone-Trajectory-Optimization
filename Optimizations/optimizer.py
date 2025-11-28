@@ -63,7 +63,8 @@ class Optimizer:
         self.mkdirs = mkdirs
 
         self.base_dir = os.path.join("Optimizations", opt_method_name)
-        os.makedirs(self.base_dir, exist_ok=True)
+        if self.mkdirs:
+            os.makedirs(self.base_dir, exist_ok=True)
         self.study_dir = None
 
         self.costs_history = []
