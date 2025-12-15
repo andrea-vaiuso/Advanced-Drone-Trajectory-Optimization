@@ -13,7 +13,7 @@ out_prefix = "trajectories"
 frame_skip = 1
 # --------------------------------------------
 
-log_file_path   = r"RL\TD3\20251121_125929\optimization_history_log.json"
+log_file_path   = r"RL\TD3\20251128_151725\optimization_history_log.json"
 world_file_path = "Worlds/training_world.pkl"
 
 interval_ms = max(1, int(1000 // max(1, fps)))

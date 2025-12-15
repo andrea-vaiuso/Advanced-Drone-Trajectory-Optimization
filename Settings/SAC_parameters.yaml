@@ -7,7 +7,7 @@ simulation_parameters_file: "Settings/simulation_parameters.yaml"
 
 # Environment settings
 # Maximum number of intermediate waypoints the agent may propose; lower values reduce planning flexibility but shorten episodes.
-max_waypoints: 10
+max_waypoints: 4
 # Euclidean distance (meters) from the target considered successful; shrinking the threshold demands higher precision before stopping.
 termination_distance: 5.0
 
@@ -31,7 +31,7 @@ cost_parameters:
   # Penalty for uncompleted missions; raising this value strongly discourages failure to reach the target.
   completion_weight: 0.0
   # Flag that determines whether each call stores intermediate cost metrics for later inspection.
-  save_costs_in_history: false
+  save_costs_in_history: True
 
 # == RL hyperparameters ==
 

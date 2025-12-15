@@ -153,7 +153,6 @@ class DroneTrajectoryEnv(Env):
         info = {}
         return observation, info
     
-
     def step(self, action: np.ndarray):  # type: ignore[override]
         """Advance the environment by processing a waypoint decision.
 
