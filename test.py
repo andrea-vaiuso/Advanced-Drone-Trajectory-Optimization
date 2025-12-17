@@ -43,6 +43,7 @@ sim = Simulation(
     noise_annoyance_radius=9,
 )
 
+
 cw = CostWrapper(sim, "")
 
 cw.simulation_object.startSimulation(stop_at_target=True, use_static_target=False, verbose=True)

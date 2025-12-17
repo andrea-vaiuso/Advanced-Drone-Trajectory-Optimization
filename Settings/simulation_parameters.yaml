@@ -1,7 +1,7 @@
 # Simulation parameters
 dt: 0.008 # Time sampling for dynamic simulation
 simulation_time: 100 # seconds
-frame_skip: 10 # Number of frames to skip for smoother animation
+frame_skip: 1 # Number of frames to skip for smoother animation
 threshold: 2.0  # Stop simulation threshold
 target_shift_threshold_distance: 5 # Shift to next segment threshold 
 noise_annoyance_radius: 15 # Radius for noise annoyance calculation in meters
