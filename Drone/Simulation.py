@@ -246,7 +246,7 @@ class Simulation:
             print(f"Simulation completed in {self.simulation_time:.2f} seconds.")
 
 
-    def setWind(self, max_simulation_time: float, dt: float, height: float = 100,
+    def setWind(self, height: float = 100,
                 airspeed: float = 10, turbulence_level: int = 30,
                 axis=['u', 'v', 'w'], plot_wind_signal: bool = False, seed=None):
         """
@@ -261,7 +261,7 @@ class Simulation:
 
         This method generates a wind signal using the Dryden wind model, which simulates atmospheric turbulence.
         """
-        num_steps = int(max_simulation_time / dt)
+        num_steps = int(self.max_simulation_time / self.dt)
         if isinstance(axis, str):
             axis = [axis]
         for ax in axis:
@@ -274,7 +274,7 @@ class Simulation:
         if plot_wind_signal:
             fig, axs = plt.subplots(len(axis), 1, figsize=(10, 3 * len(axis)))
             for i, ax in enumerate(axis):
-                axs[i].plot(np.arange(num_steps) * dt, self.wind_signals[i])
+                axs[i].plot(np.arange(num_steps) * self.dt, self.wind_signals[i])
                 axs[i].set_title(f"Wind Signal for Axis {ax}")
                 axs[i].set_xlabel("Time (s)")
                 axs[i].set_ylabel("Wind Speed (m/s)")

@@ -305,13 +305,5 @@ def generate_log_dict(sim: Simulation) -> dict:
             'label': 'Power',
             'calc_average': True,
             'showgrid': True
-        },
-        'Wind Thrust': {
-            'data': np.array(sim.delta_t_history),
-            'ylabel': 'Wind Thrust (N)',
-            'color': 'cyan',
-            'linestyle': '-',
-            'label': 'Wind Thrust',
-            'showgrid': True
-        },
+        }
     }
